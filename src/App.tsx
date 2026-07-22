@@ -368,9 +368,6 @@ export default function App() {
                 <PanelLeft size={20} />
               </button>
             )}
-            <h2 className="page-title">
-              {activeTab === 'generate' ? 'Video Generation Studio' : 'Manage Presenters'}
-            </h2>
           </div>
           <div className="user-profile">
             <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>AD</div>

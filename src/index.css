@@ -1,7 +1,7 @@
 /* index.css */
 :root {
   --bg-app: #f2f8f6;
-  --bg-sidebar: #445451; /* Soft Eucalyptus Slate (Lighter Mineral Sage-Charcoal) */
+  --bg-sidebar: #e5edea; /* Beautiful, light desaturated Sage-Mint */
   --bg-card: #ffffff;
   --bg-pill-active: #bfe5df;
   --bg-pill-hover: #e8f5f2;
@@ -62,17 +62,17 @@ body {
   overflow: hidden;
 }
 
-/* Left Sidebar - Premium Dark Forest Green */
+/* Left Sidebar - Premium Light Sage-Mint */
 .app-sidebar {
   width: 280px;
   height: 100%;
   background: var(--bg-sidebar);
-  color: #ffffff;
+  color: var(--text-dark);
   padding: 32px 24px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid var(--border-color);
   flex-shrink: 0;
   transition: var(--transition-smooth);
   position: relative;
@@ -100,7 +100,7 @@ body {
 .btn-collapse-sidebar {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   cursor: pointer;
   padding: 6px;
   border-radius: 8px;
@@ -113,8 +113,8 @@ body {
 }
 
 .btn-collapse-sidebar:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dark);
+  background: rgba(15, 28, 26, 0.05);
 }
 
 .btn-expand-sidebar {
@@ -136,8 +136,8 @@ body {
 }
 
 .brand-logo {
-  background: #ffffff;
-  color: var(--bg-sidebar);
+  background: var(--accent-dark);
+  color: #ffffff;
   width: 42px;
   height: 42px;
   border-radius: 12px;
@@ -154,13 +154,13 @@ body {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.5px;
-  color: #ffffff;
+  color: var(--text-dark);
   line-height: 1.2;
 }
 
 .brand-info p {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -179,7 +179,7 @@ body {
   border-radius: 14px;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--text-muted);
   cursor: pointer;
   transition: var(--transition-smooth);
   font-family: var(--font-title);
@@ -191,18 +191,18 @@ body {
 }
 
 .nav-tab:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dark);
+  background: rgba(15, 28, 26, 0.04);
 }
 
 .nav-tab.active {
-  background: #bfe5df;
-  color: var(--bg-sidebar);
-  box-shadow: 0 4px 12px rgba(15, 28, 26, 0.15);
+  background: var(--accent-dark);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 28, 26, 0.12);
 }
 
 .sidebar-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-color);
   padding-top: 24px;
 }
 
@@ -247,11 +247,11 @@ body {
   transition: var(--transition-smooth);
 }
 
-/* Sub-Header bar */
+/* Sub-Header bar - Unified with Workspace Background (No Separator Line) */
 .top-header {
   height: 80px;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
