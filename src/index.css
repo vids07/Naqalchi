@@ -1,7 +1,7 @@
 /* index.css */
 :root {
   --bg-app: #f2f8f6;
-  --bg-sidebar: #182325; /* Gorgeous, premium Deep Metallic Slate with subtle sage/steel undertones */
+  --bg-sidebar: #445451; /* Soft Eucalyptus Slate (Lighter Mineral Sage-Charcoal) */
   --bg-card: #ffffff;
   --bg-pill-active: #bfe5df;
   --bg-pill-hover: #e8f5f2;
@@ -62,7 +62,7 @@ body {
   overflow: hidden;
 }
 
-/* Left Sidebar - Premium Deep Metallic Slate */
+/* Left Sidebar - Premium Dark Forest Green */
 .app-sidebar {
   width: 280px;
   height: 100%;
@@ -72,15 +72,67 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+  transition: var(--transition-smooth);
+  position: relative;
+}
+
+/* Sidebar Collapsed State (ChatGPT style) */
+.sidebar-collapsed .app-sidebar {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-right-color: transparent;
 }
 
 .brand-section {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 48px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.btn-collapse-sidebar {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.btn-collapse-sidebar:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-expand-sidebar {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.btn-expand-sidebar:hover {
+  color: var(--text-dark);
+  background: rgba(15, 28, 26, 0.05);
 }
 
 .brand-logo {
@@ -108,7 +160,7 @@ body {
 
 .brand-info p {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -127,7 +179,7 @@ body {
   border-radius: 14px;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.65);
   cursor: pointer;
   transition: var(--transition-smooth);
   font-family: var(--font-title);
@@ -144,9 +196,9 @@ body {
 }
 
 .nav-tab.active {
-  background: var(--bg-pill-active);
+  background: #bfe5df;
   color: var(--bg-sidebar);
-  box-shadow: 0 4px 12px rgba(191, 229, 223, 0.15);
+  box-shadow: 0 4px 12px rgba(15, 28, 26, 0.15);
 }
 
 .sidebar-footer {
@@ -192,6 +244,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: var(--transition-smooth);
 }
 
 /* Sub-Header bar */

@@ -13,7 +13,9 @@ import {
   Sparkles,
   UserCheck,
   FileAudio,
-  FileVideo
+  FileVideo,
+  PanelLeft,
+  PanelLeftClose
 } from 'lucide-react';
 
 interface Persona {
@@ -38,16 +40,19 @@ export default function App() {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'generate' | 'personas'>('generate');
 
+  // Sidebar Collapse state (ChatGPT-style)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+
   // Application State - Personas (Starts empty by default as requested)
   const [personas, setPersonas] = useState<Persona[]>(() => {
-    const saved = localStorage.getItem('naqalchi_personas');
+    const saved = localStorage.getItem('naqalchi_production_personas');
     if (saved) return JSON.parse(saved);
     return []; // Empty by default
   });
 
   // Persist Personas
   useEffect(() => {
-    localStorage.setItem('naqalchi_personas', JSON.stringify(personas));
+    localStorage.setItem('naqalchi_production_personas', JSON.stringify(personas));
   }, [personas]);
 
   // Main Generator State
@@ -313,7 +318,7 @@ export default function App() {
   };
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* SaaS Premium Left Sidebar Layout */}
       <aside className="app-sidebar">
         <div className="brand-section">
@@ -322,6 +327,13 @@ export default function App() {
             <h1>Naqalchi</h1>
             <p>AI CREATIVE SUITE</p>
           </div>
+          <button 
+            className="btn-collapse-sidebar"
+            onClick={() => setIsSidebarCollapsed(true)}
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={18} />
+          </button>
         </div>
 
         <nav className="nav-menu">
@@ -341,27 +353,31 @@ export default function App() {
           </button>
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="user-profile">
-            <div className="user-avatar">AD</div>
-            <div className="user-meta">
-              <h4 style={{ color: '#ffffff' }}>Admin Studio</h4>
-              <p>INTERNAL ACCOUNT</p>
-            </div>
-          </div>
-        </div>
       </aside>
 
       {/* Main Right Full-Viewport Content Area */}
       <main className="main-content">
         <header className="top-header">
-          <h2 className="page-title">
-            {activeTab === 'generate' ? 'Video Generation Studio' : 'Manage Presenters'}
-          </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>
-              Production Environment v2.4
-            </span>
+            {isSidebarCollapsed && (
+              <button 
+                className="btn-expand-sidebar"
+                onClick={() => setIsSidebarCollapsed(false)}
+                title="Expand sidebar"
+              >
+                <PanelLeft size={20} />
+              </button>
+            )}
+            <h2 className="page-title">
+              {activeTab === 'generate' ? 'Video Generation Studio' : 'Manage Presenters'}
+            </h2>
+          </div>
+          <div className="user-profile">
+            <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>AD</div>
+            <div className="user-meta">
+              <h4 style={{ color: 'var(--text-dark)', fontSize: '13px', fontWeight: 600 }}>Admin Studio</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>INTERNAL ACCOUNT</p>
+            </div>
           </div>
         </header>
 
