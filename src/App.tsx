@@ -727,50 +727,27 @@ export default function App() {
                     </label>
                   </div>
 
-                  {selectedPersona && selectedPersona.id !== 'system-standard' ? (
-                    <div 
-                      className="file-upload-zone"
-                      style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: 'rgba(22, 42, 38, 0.12)', padding: '36px', background: '#f4faf7' }}
+                  <div 
+                    className="file-upload-zone"
+                    onClick={() => setShowAddModal(true)}
+                    style={{ borderStyle: 'dashed', padding: '36px', background: '#fcfdfd' }}
+                  >
+                    <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Standard AI Presenter Active</span>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
+                      Currently using our built-in high-fidelity presenter. To clone your custom voice and face, create a custom persona.
+                    </p>
+                    <button 
+                      type="button" 
+                      className="btn-primary-small"
+                      style={{ marginTop: '16px', padding: '8px 16px', fontSize: '13px' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAddModal(true);
+                      }}
                     >
-                      <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Custom Clone Active: {selectedPersona.name}</span>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
-                        Your customized voice clone and visual mesh references are active and ready. Visit the Manage Personas tab to switch or clone.
-                      </p>
-                      <button 
-                        type="button" 
-                        className="btn-primary-small"
-                        style={{ marginTop: '16px', padding: '8px 16px', fontSize: '13px' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTab('personas');
-                        }}
-                      >
-                        Manage Custom Clones
-                      </button>
-                    </div>
-                  ) : (
-                    <div 
-                      className="file-upload-zone"
-                      onClick={() => setShowAddModal(true)}
-                      style={{ borderStyle: 'dashed', padding: '36px', background: '#fcfdfd' }}
-                    >
-                      <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Standard AI Presenter Active</span>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
-                        Currently using our built-in high-fidelity presenter. To clone your custom voice and face, create a custom persona.
-                      </p>
-                      <button 
-                        type="button" 
-                        className="btn-primary-small"
-                        style={{ marginTop: '16px', padding: '8px 16px', fontSize: '13px' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowAddModal(true);
-                        }}
-                      >
-                        + Create Custom Clone
-                      </button>
-                    </div>
-                  )}
+                      + Create Custom Clone
+                    </button>
+                  </div>
                 </div>
 
                 {/* History Section */}
@@ -1000,62 +977,69 @@ export default function App() {
               </div>
             ) : (
               <div className="persona-admin-grid">
-                {personas.map((persona) => {
+                {personas.map((persona, index) => {
                   const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                  return (
-                    <div key={persona.id} className="persona-admin-card">
-                      <div className="persona-admin-image-wrapper">
-                        <div className="persona-initials" style={{ fontSize: '24px' }}>{initials}</div>
-                      </div>
-                      <div className="persona-admin-details">
-                        <div>
-                          <h3>{persona.name}</h3>
-                          <div className="persona-admin-files">
-                            <div className="file-status ready">
-                              <FileAudio size={12} /> {persona.voiceClipName}
-                            </div>
-                            <div className="file-status ready">
-                              <FileVideo size={12} /> {persona.faceClipName}
-                            </div>
-                          </div>
-                        </div>
+                  const isActive = selectedPersona?.id === persona.id;
 
-                        <div className="persona-admin-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  // Dynamic 4-color luxury rotation from user reference: Lavender, Mint-Green, Ice-Blue, Champagne-Grey
+                  const gradients = [
+                    { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' },
+                    { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' },
+                    { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' },
+                    { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' }
+                  ];
+                  const gradient = gradients[index % gradients.length];
+
+                  return (
+                    <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
+                      {/* Top Header section */}
+                      <div className="persona-card-header">
+                        <div 
+                          className="persona-admin-avatar"
+                          style={{ background: gradient.bg, boxShadow: `0 4px 14px ${gradient.shadow}` }}
+                        >
+                          <div className="avatar-glow" style={{ borderColor: gradient.border }}></div>
+                          <span className="avatar-initials">{initials}</span>
+                        </div>
+                        <div className="persona-card-info">
+                          <h3>{persona.name}</h3>
+                          <span className={`status-pill ${isActive ? 'active' : 'idle'}`}>
+                            {isActive ? 'Active Selected' : 'Standby'}
+                          </span>
+                        </div>
+                      </div>
+
+
+                      {/* Symmetrical Footer action group */}
+                      <div className="persona-card-actions">
+                        <button 
+                          className={`btn-studio-toggle ${isActive ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedPersona(persona);
+                            setActiveTab('generate');
+                          }}
+                        >
+                          {isActive ? 'Selected' : 'Use in Studio'}
+                        </button>
+                        <div className="secondary-actions-group">
                           <button 
-                            className={`btn-primary-small ${selectedPersona?.id === persona.id ? 'active-green' : ''}`}
-                            style={{ 
-                              padding: '6px 12px', 
-                              fontSize: '11px', 
-                              background: selectedPersona?.id === persona.id ? '#1e7a44' : 'var(--accent-dark)',
-                              borderColor: 'transparent',
-                              borderRadius: '8px',
-                              height: '32px'
-                            }}
-                            onClick={() => {
-                              setSelectedPersona(persona);
-                              setActiveTab('generate');
-                            }}
-                          >
-                            {selectedPersona?.id === persona.id ? 'Active Selected' : 'Use in Studio'}
-                          </button>
-                          <button 
-                            className="btn-action-icon"
-                            style={{ height: '32px', width: '32px' }}
+                            className="btn-studio-icon"
                             onClick={() => {
                               setNewPersonaName(persona.name);
-                              setNewPersonaVoiceFile(persona.voiceClipName);
-                              setNewPersonaFaceFile(persona.faceClipName);
+                              setNewPersonaVoiceFile(persona.voiceClipName || null);
+                              setNewPersonaFaceFile(persona.faceClipName || null);
                               setShowAddModal(true);
                             }}
+                            title="Configure Settings"
                           >
-                            <Settings2 size={14} />
+                            <Settings2 size={13} />
                           </button>
                           <button 
-                            className="btn-action-icon delete"
-                            style={{ height: '32px', width: '32px' }}
+                            className="btn-studio-icon danger"
                             onClick={(e) => handleDeletePersona(persona.id, e)}
+                            title="Delete Persona"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
@@ -1471,11 +1455,6 @@ export default function App() {
             {/* STEP 4: SUCCESS CONFIRMATION AND ONBOARDING */}
             {wizardStep === 4 && (
               <div className="diagnostic-wizard-panel success-panel" style={{ textAlign: 'center', padding: '10px 0 20px' }}>
-                {/* Huge animated floating success badge */}
-                <div className="success-badge-container">
-                  <div className="success-badge-glow"></div>
-                  <CheckCircle2 size={48} className="success-badge-icon" />
-                </div>
 
                 <div style={{ marginTop: '16px' }}>
                   <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '800', color: 'var(--text-dark)' }}>
@@ -1486,16 +1465,6 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Info Card explaining where it resides */}
-                <div className="success-destination-info">
-                  <span className="destination-icon">💡</span>
-                  <div style={{ textAlign: 'left', fontSize: '12.5px' }}>
-                    <strong>Where is it stored?</strong>
-                    <p style={{ color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4' }}>
-                      All customized clones are saved under the <strong>Manage Personas</strong> tab in the left sidebar, where you can preview, switch, or delete them.
-                    </p>
-                  </div>
-                </div>
 
                 <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '20px', width: '100%', justifyContent: 'center', marginTop: '10px' }}>
                   <button 
