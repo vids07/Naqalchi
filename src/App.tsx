@@ -977,44 +977,57 @@ export default function App() {
               </div>
             ) : (
               <div className="persona-admin-grid">
-                {personas.map((persona) => {
-                  const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                  const isActive = selectedPersona?.id === persona.id;
+                {(() => {
+                  let lastColorIndex = -1;
+                  return personas.map((persona, index) => {
+                    const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    const isActive = selectedPersona?.id === persona.id;
 
-                  // 6 ultra-premium pastel gradients: Lavender, Mint-Green, Ice-Blue, Champagne-Grey, Dusty Peach, Soft Buttercup
-                  const gradients = [
-                    { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #ffdcd0 0%, #fca49b 100%)', shadow: 'rgba(252, 164, 155, 0.22)', border: 'rgba(255, 220, 208, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #fff3d0 0%, #e2c08c 100%)', shadow: 'rgba(226, 192, 140, 0.22)', border: 'rgba(255, 243, 208, 0.35)' }
-                  ];
+                    // 5 ultra-premium pastel gradients: Lavender, Mint-Green, Ice-Blue, Dusty Peach, Champagne-Grey
+                    const gradients = [
+                      { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' }, // Lavender
+                      { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' }, // Mint-Green
+                      { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' }, // Ice-Blue
+                      { bg: 'linear-gradient(135deg, #ffdcd0 0%, #fca49b 100%)', shadow: 'rgba(252, 164, 155, 0.22)', border: 'rgba(255, 220, 208, 0.35)' }, // Dusty Peach
+                      { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' }  // Champagne-Grey
+                    ];
 
-                  // Stable hash helper to choose a random color that stays consistent on reload
-                  const getStableIndex = (str: string) => {
-                    let hash = 0;
-                    for (let i = 0; i < str.length; i++) {
-                      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                    // Stable hash helper to choose a random color
+                    const getStableIndex = (str: string) => {
+                      let hash = 0;
+                      for (let i = 0; i < str.length; i++) {
+                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      return Math.abs(hash);
+                    };
+
+                    // Let's determine a stable randomized color
+                    let colorIndex = getStableIndex(persona.id || persona.name) % gradients.length;
+
+                    // If it's the first card in the deck, ALWAYS showcase the gorgeous Lavender Pink!
+                    if (index === 0) {
+                      colorIndex = 0;
+                    } else if (colorIndex === lastColorIndex) {
+                      // Prevent adjacent elements from ever sharing the same color
+                      colorIndex = (colorIndex + 1) % gradients.length;
                     }
-                    return Math.abs(hash);
-                  };
 
-                  const gradient = gradients[getStableIndex(persona.id || persona.name) % gradients.length];
+                    lastColorIndex = colorIndex;
+                    const gradient = gradients[colorIndex];
 
-                  return (
-                    <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
-                      {/* Top Header section */}
-                      <div className="persona-card-header">
-                        <div 
-                          className="persona-admin-avatar"
-                          style={{ background: gradient.bg, boxShadow: `0 4px 14px ${gradient.shadow}` }}
-                        >
-                          <div className="avatar-glow" style={{ borderColor: gradient.border }}></div>
-                          <span className="avatar-initials">{initials}</span>
-                        </div>
-                        <div className="persona-card-info">
-                          <h3>{persona.name}</h3>
+                    return (
+                      <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
+                        {/* Top Header section */}
+                        <div className="persona-card-header">
+                          <div 
+                            className="persona-admin-avatar"
+                            style={{ background: gradient.bg, boxShadow: `0 4px 14px ${gradient.shadow}` }}
+                          >
+                            <div className="avatar-glow" style={{ borderColor: gradient.border }}></div>
+                            <span className="avatar-initials">{initials}</span>
+                          </div>
+                          <div className="persona-card-info">
+                            <h3>{persona.name}</h3>
                           <span className={`status-pill ${isActive ? 'active' : 'idle'}`}>
                             {isActive ? 'Active Selected' : 'Standby'}
                           </span>
@@ -1057,7 +1070,8 @@ export default function App() {
                       </div>
                     </div>
                   );
-                })}
+                });
+              })()}
               </div>
             )}
           </div>
@@ -1100,73 +1114,119 @@ export default function App() {
             </div>
 
             {/* STEP 0: PERSONA IDENTIFIERS */}
-            {wizardStep === 0 && (
-              <div className="modal-form">
-                <div className="form-group">
-                  <label>Presenter Name</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Sarah"
-                    value={newPersonaName}
-                    onChange={(e) => setNewPersonaName(e.target.value)}
-                    required 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Presenter Style</label>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Choose how you want your presenter to sound and talk:
-                  </p>
-                  <div className="blueprint-focus-grid">
+            {wizardStep === 0 && (() => {
+              const getValidationError = () => {
+                const trimmed = newPersonaName.trim();
+                if (!newPersonaName) return null; // Show no error when empty to start clean
+                if (trimmed.length < 2) {
+                  return "Name must be at least 2 characters.";
+                }
+                if (trimmed.length > 30) {
+                  return "Name cannot exceed 30 characters.";
+                }
+                const validCharRegex = /^[a-zA-Z0-9\s'-]+$/;
+                if (!validCharRegex.test(trimmed)) {
+                  return "Only letters, numbers, spaces, hyphens, and apostrophes are allowed.";
+                }
+                // Prevent consecutive repetitive spam characters (e.g., 'sss', 'jjj', 'aaa')
+                // Real names can have at most 2 identical consecutive characters (e.g. 'Aaron', 'Lee')
+                const repeatedCharsRegex = /(.)\1\1/;
+                if (repeatedCharsRegex.test(trimmed)) {
+                  return "Invalid name: Too many repeating consecutive characters.";
+                }
+
+                // Prevent names made of a single character repeated (e.g. 'aaaaa')
+                const alphabeticLettersOnly = trimmed.toLowerCase().replace(/[^a-z]/g, '');
+                const uniqueChars = new Set(alphabeticLettersOnly);
+                if (trimmed.length >= 3 && uniqueChars.size < 2) {
+                  return "Invalid name: Please provide a realistic name with distinct characters.";
+                }
+
+                // Check if duplicate name exists in roster
+                const nameExists = personas.some(p => p.name.toLowerCase() === trimmed.toLowerCase());
+                if (nameExists) {
+                  return "A presenter with this name already exists in your team.";
+                }
+                return null;
+              };
+
+              const nameError = getValidationError();
+              const isNameInvalid = !!nameError || !newPersonaName.trim();
+
+              return (
+                <div className="modal-form">
+                  <div className="form-group">
+                    <label>Presenter Name</label>
+                    <input 
+                      type="text" 
+                      className={`form-input ${nameError ? 'error-state' : ''}`} 
+                      placeholder="e.g. Sarah"
+                      value={newPersonaName}
+                      onChange={(e) => setNewPersonaName(e.target.value)}
+                      required 
+                      style={nameError ? { borderColor: '#e84118', boxShadow: '0 0 0 3px rgba(232, 65, 24, 0.1)' } : {}}
+                    />
+                    {nameError && (
+                      <span className="form-error-text" style={{ color: '#e84118', fontSize: '12px', marginTop: '6px', display: 'block', fontWeight: 500 }}>
+                        ⚠️ {nameError}
+                      </span>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label>Presenter Style</label>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Choose how you want your presenter to sound and talk:
+                    </p>
+                    <div className="blueprint-focus-grid">
+                      <button 
+                        type="button"
+                        className={`blueprint-focus-card ${personaFocus === 'corporate' ? 'active' : ''}`}
+                        onClick={() => setPersonaFocus('corporate')}
+                      >
+                        <span className="focus-emoji">🎯</span>
+                        <div className="focus-content">
+                          <strong>Professional Tone</strong>
+                          <p>Best for business, presentations, and formal talks.</p>
+                        </div>
+                      </button>
+                      
+                      <button 
+                        type="button"
+                        className={`blueprint-focus-card ${personaFocus === 'social' ? 'active' : ''}`}
+                        onClick={() => setPersonaFocus('social')}
+                      >
+                        <span className="focus-emoji">⚡</span>
+                        <div className="focus-content">
+                          <strong>Casual / Social Tone</strong>
+                          <p>Best for social media, friendly videos, and high energy.</p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
                     <button 
-                      type="button"
-                      className={`blueprint-focus-card ${personaFocus === 'corporate' ? 'active' : ''}`}
-                      onClick={() => setPersonaFocus('corporate')}
+                      type="button" 
+                      className="btn-secondary" 
+                      onClick={() => {
+                        releaseMediaStreams();
+                        setShowAddModal(false);
+                      }}
                     >
-                      <span className="focus-emoji">🎯</span>
-                      <div className="focus-content">
-                        <strong>Professional Tone</strong>
-                        <p>Best for business, presentations, and formal talks.</p>
-                      </div>
+                      Cancel
                     </button>
-                    
                     <button 
-                      type="button"
-                      className={`blueprint-focus-card ${personaFocus === 'social' ? 'active' : ''}`}
-                      onClick={() => setPersonaFocus('social')}
+                      type="button" 
+                      className="btn-primary-small"
+                      disabled={isNameInvalid}
+                      onClick={() => setWizardStep(1)}
                     >
-                      <span className="focus-emoji">⚡</span>
-                      <div className="focus-content">
-                        <strong>Casual / Social Tone</strong>
-                        <p>Best for social media, friendly videos, and high energy.</p>
-                      </div>
+                      Next: Voice Setup
                     </button>
                   </div>
                 </div>
-
-                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    onClick={() => {
-                      releaseMediaStreams();
-                      setShowAddModal(false);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn-primary-small"
-                    disabled={!newPersonaName.trim()}
-                    onClick={() => setWizardStep(1)}
-                  >
-                    Next: Voice Setup
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* STEP 1: VOCAL SETUP */}
             {wizardStep === 1 && (
