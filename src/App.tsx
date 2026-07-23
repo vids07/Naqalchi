@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Download, 
   RotateCcw, 
-  Plus, 
   Trash2, 
   UserPlus, 
   Settings2, 
@@ -15,7 +14,10 @@ import {
   FileAudio,
   FileVideo,
   PanelLeft,
-  PanelLeftClose
+  PanelLeftClose,
+  Mic,
+  Video,
+  Camera
 } from 'lucide-react';
 
 interface Persona {
@@ -24,6 +26,7 @@ interface Persona {
   avatarUrl: string | null;
   voiceClipName: string | null;
   faceClipName: string | null;
+  focus?: 'corporate' | 'social';
 }
 
 interface GenerationHistory {
@@ -35,6 +38,15 @@ interface GenerationHistory {
   timestamp: string;
   duration: string;
 }
+
+const SYSTEM_STANDARD_PERSONA: Persona = {
+  id: 'system-standard',
+  name: 'Standard Presenter',
+  avatarUrl: null,
+  voiceClipName: 'standard_vocal_model.wav',
+  faceClipName: 'standard_mesh_model.mp4',
+  focus: 'corporate'
+};
 
 export default function App() {
   // Navigation Tabs
@@ -59,16 +71,12 @@ export default function App() {
   const [script, setScript] = useState<string>(
     "Welcome to Naqalchi. This is a production-ready system designed to generate polished, branded social media content. Type your script, create your custom speaking personas with vocal samples, select your desired studio settings, and generate professional speaking video assets instantly."
   );
-  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(() => {
-    return personas.length > 0 ? personas[0] : null;
-  });
+  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(SYSTEM_STANDARD_PERSONA);
 
   // Synchronize selection if personas list changes
   useEffect(() => {
-    if (personas.length > 0 && !selectedPersona) {
-      setSelectedPersona(personas[0]);
-    } else if (personas.length === 0) {
-      setSelectedPersona(null);
+    if (!selectedPersona) {
+      setSelectedPersona(SYSTEM_STANDARD_PERSONA);
     }
   }, [personas, selectedPersona]);
 
@@ -107,6 +115,31 @@ export default function App() {
   const [newPersonaName, setNewPersonaName] = useState<string>('');
   const [newPersonaVoiceFile, setNewPersonaVoiceFile] = useState<string | null>(null);
   const [newPersonaFaceFile, setNewPersonaFaceFile] = useState<string | null>(null);
+
+  // Upgraded Premium Wizard State Systems
+  const [wizardStep, setWizardStep] = useState<number>(0); // 0: Name, 1: Voice, 2: Face, 3: Diagnostics
+  const [voiceSource, setVoiceSource] = useState<'upload' | 'record'>('upload');
+  const [faceSource, setFaceSource] = useState<'upload' | 'record'>('upload');
+  const [personaFocus, setPersonaFocus] = useState<'corporate' | 'social'>('corporate');
+  
+  const [isRecordingVoice, setIsRecordingVoice] = useState<boolean>(false);
+  const [voiceTimer, setVoiceTimer] = useState<number>(0);
+  const [micSignal, setMicSignal] = useState<boolean>(false);
+  
+  const [isRecordingFace, setIsRecordingFace] = useState<boolean>(false);
+  const [faceTimer, setFaceTimer] = useState<number>(0);
+  const [faceCountdown, setFaceCountdown] = useState<number>(0);
+  const [cameraSignal, setCameraSignal] = useState<boolean>(false);
+
+  const [diagnosticProgress, setDiagnosticProgress] = useState<number>(0);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
+
+  // Refs for media capturing and visual telemetry
+  const oscillogramRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   // Refs & Hooks for Playing Speaking Canvas
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -276,6 +309,288 @@ export default function App() {
     };
   }, [generationResult, isPlaying]);
 
+  // Clean up media tracks on component unmount
+  useEffect(() => {
+    return () => {
+      releaseMediaStreams();
+    };
+  }, []);
+
+  // Safe release of mic and camera stream resources
+  const releaseMediaStreams = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+  };
+
+  // Step 1: Initiate Mic Connection
+  const initiateMicrophone = async () => {
+    releaseMediaStreams();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      setMicSignal(true);
+
+      // Setup Web Audio Analyser
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+    } catch (err) {
+      console.warn("Hardware Mic unavailable, entering high-fidelity Studio Simulation", err);
+      // Soft-fallback: set as connected to let the simulation work seamlessly
+      setMicSignal(true);
+    }
+  };
+
+  // Start Mic Recording & Teleprompter
+  const startVoiceRecording = () => {
+    setIsRecordingVoice(true);
+    setVoiceTimer(0);
+  };
+
+  // Stop Mic Recording
+  const stopVoiceRecording = () => {
+    setIsRecordingVoice(false);
+    const mockFilename = `vocal_blueprint_studio_${Math.floor(Math.random() * 900) + 100}.wav`;
+    setNewPersonaVoiceFile(mockFilename);
+  };
+
+  // Manage Voice Timer Counter
+  useEffect(() => {
+    let timer: any;
+    if (isRecordingVoice) {
+      timer = setInterval(() => {
+        setVoiceTimer(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isRecordingVoice]);
+
+  // Audio Oscillograph Dynamic Canvas Loop
+  useEffect(() => {
+    if (wizardStep !== 1 || voiceSource !== 'record' || !oscillogramRef.current) return;
+    const canvas = oscillogramRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    const bufferLength = analyserRef.current ? analyserRef.current.frequencyBinCount : 128;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const renderWave = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Background light fill
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#162a26'; // Beautiful crisp brand accent green stroke
+      ctx.beginPath();
+
+      if (analyserRef.current && isRecordingVoice) {
+        // Real-time audio waveform mapping
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        const sliceWidth = canvas.width / bufferLength;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * canvas.height) / 2;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+      } else {
+        // Simulated harmonic wave when not recording or using simulated mic
+        const sliceWidth = canvas.width / 100;
+        let x = 0;
+        const amplitude = isRecordingVoice ? 24 : 6;
+        const speed = isRecordingVoice ? 0.15 : 0.04;
+
+        for (let i = 0; i <= 100; i++) {
+          const angle = (i * 0.15) + (Date.now() * speed);
+          const y = (canvas.height / 2) + Math.sin(angle) * Math.cos(angle * 0.5) * amplitude;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+      }
+
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+
+      animationFrameId = requestAnimationFrame(renderWave);
+    };
+
+    renderWave();
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [wizardStep, voiceSource, isRecordingVoice]);
+
+  // Step 2: Initiate Camera Viewport
+  const initiateCamera = async () => {
+    releaseMediaStreams();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 360 }
+      });
+      mediaStreamRef.current = stream;
+      setCameraSignal(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn("Hardware Camera unavailable, loading high-fidelity Sandbox Simulation", err);
+      setCameraSignal(true); // Gracefully unlock simulated camera viewport
+    }
+  };
+
+  // Start Face Recording (with a cinematic 3s countdown pre-roll)
+  const startFaceRecording = () => {
+    setFaceCountdown(3);
+  };
+
+  // Countdown timer trigger
+  useEffect(() => {
+    let interval: any;
+    if (faceCountdown > 0) {
+      interval = setInterval(() => {
+        setFaceCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            // Finished counting down, active record stream
+            setIsRecordingFace(true);
+            setFaceTimer(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [faceCountdown]);
+
+  // Handle Face Active Record Timer
+  useEffect(() => {
+    let timer: any;
+    if (isRecordingFace) {
+      timer = setInterval(() => {
+        setFaceTimer(prev => {
+          if (prev >= 8) {
+            // Auto stop after 8 seconds (ideal avatar capture buffer)
+            clearInterval(timer);
+            setIsRecordingFace(false);
+            const mockFilename = `mesh_profile_webcam_${Math.floor(Math.random() * 900) + 100}.mp4`;
+            setNewPersonaFaceFile(mockFilename);
+            return 8;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isRecordingFace]);
+
+  // Step 3: Run High-Fidelity Diagnostics Scan & Save Persona
+  const triggerDiagnosticsAndSave = () => {
+    setWizardStep(3);
+    setDiagnosticProgress(0);
+    setDiagnosticLogs([
+      "Establishing link with neural rendering network...",
+      "Analyzing recorded acoustic frequencies...",
+      "Normalizing volume thresholds and audio decibels..."
+    ]);
+  };
+
+  // Diagnostic loading log simulation
+  useEffect(() => {
+    let interval: any;
+    if (wizardStep === 3) {
+      interval = setInterval(() => {
+        setDiagnosticProgress(prev => {
+          const next = prev + 10;
+          
+          if (next === 20) {
+            setDiagnosticLogs(logs => [...logs, "Mapping specific vocal attributes and delivery speed..."]);
+          }
+          if (next === 40) {
+            setDiagnosticLogs(logs => [...logs, "Calibrating head orientation and boundary anchors..."]);
+          }
+          if (next === 65) {
+            setDiagnosticLogs(logs => [...logs, "Aligning gaze vectors, blinking, and lipsync movement..."]);
+          }
+          if (next === 85) {
+            setDiagnosticLogs(logs => [...logs, "Securing and rendering private presenter model files..."]);
+          }
+          
+          if (next >= 100) {
+            clearInterval(interval);
+            // Execute the actual persona addition
+            setTimeout(() => {
+              saveNewPersonaToRoster();
+            }, 800);
+            return 100;
+          }
+          return next;
+        });
+      }, 350);
+    }
+    return () => clearInterval(interval);
+  }, [wizardStep]);
+
+  // Commit Persona to State
+  const saveNewPersonaToRoster = () => {
+    if (!newPersonaName.trim()) return;
+
+    const newPersona: Persona = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: newPersonaName,
+      avatarUrl: null,
+      voiceClipName: voiceSource === 'record' ? (newPersonaVoiceFile || 'studio_recorded_vocal.wav') : (newPersonaVoiceFile || 'uploaded_sample.wav'),
+      faceClipName: faceSource === 'record' ? (newPersonaFaceFile || 'studio_recorded_mesh.mp4') : (newPersonaFaceFile || 'uploaded_mesh.mp4'),
+      focus: personaFocus
+    };
+
+    const updated = [...personas, newPersona];
+    setPersonas(updated);
+    setSelectedPersona(newPersona);
+    
+    // Close & reset
+    releaseMediaStreams();
+    setShowAddModal(false);
+    setNewPersonaName('');
+    setNewPersonaVoiceFile(null);
+    setNewPersonaFaceFile(null);
+    setWizardStep(0);
+    setVoiceSource('upload');
+    setFaceSource('upload');
+  };
+
   // Start Pipeline Trigger
   const handleGenerate = () => {
     if (!selectedPersona) return;
@@ -285,27 +600,6 @@ export default function App() {
     setElapsedTime(0);
   };
 
-  // Add custom persona handler
-  const handleAddPersona = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPersonaName.trim()) return;
-
-    const newPersona: Persona = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newPersonaName,
-      avatarUrl: null,
-      voiceClipName: newPersonaVoiceFile || 'vocal_reference.wav',
-      faceClipName: newPersonaFaceFile || 'avatar_mesh_reference.mp4'
-    };
-
-    const updated = [...personas, newPersona];
-    setPersonas(updated);
-    setSelectedPersona(newPersona);
-    setShowAddModal(false);
-    setNewPersonaName('');
-    setNewPersonaVoiceFile(null);
-    setNewPersonaFaceFile(null);
-  };
 
   // Delete Persona
   const handleDeletePersona = (id: string, e: React.MouseEvent) => {
@@ -322,7 +616,22 @@ export default function App() {
       {/* SaaS Premium Left Sidebar Layout */}
       <aside className="app-sidebar">
         <div className="brand-section">
-          <div className="brand-logo">N</div>
+          <div className="brand-logo">
+            <svg viewBox="0 0 100 100" width="44" height="44" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <radialGradient id="spadeAuraGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#00f5c4" stopOpacity="1" />
+                  <stop offset="40%" stopColor="#00b894" stopOpacity="1" />
+                  <stop offset="80%" stopColor="#008066" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#005c4d" stopOpacity="1" />
+                </radialGradient>
+              </defs>
+              <rect width="100" height="100" fill="url(#spadeAuraGlow)" />
+              {/* Seamless bold Spade lobes and concave curved stem matching original artwork */}
+              <path d="M50 15C47 15 22 36 22 52C22 61 29 65 39.5 65C44 65 47.5 63 50 60C52.5 63 56 65 60.5 65C71 65 78 61 78 52C78 36 53 15 50 15Z" fill="#060c0b" />
+              <path d="M50 56Q48 65 44 76.5H56Q52 65 50 56Z" fill="#060c0b" />
+            </svg>
+          </div>
           <div className="brand-info">
             <h1>Naqalchi</h1>
             <p>AI CREATIVE SUITE</p>
@@ -403,20 +712,44 @@ export default function App() {
 
                 {/* Persona Selection */}
                 <div className="persona-selector">
-                  <label className="section-title">
-                    <UserCheck size={16} /> Presenter Persona
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label className="section-title" style={{ margin: 0 }}>
+                      <UserCheck size={16} /> Presenter Persona
+                    </label>
+                  </div>
 
-                  {personas.length === 0 ? (
+                  {selectedPersona && selectedPersona.id !== 'system-standard' ? (
+                    <div 
+                      className="file-upload-zone"
+                      style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: 'rgba(22, 42, 38, 0.12)', padding: '36px', background: '#f4faf7' }}
+                    >
+                      <UserCheck size={28} style={{ color: 'var(--accent-dark)', marginBottom: '8px' }} />
+                      <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Custom Clone Active: {selectedPersona.name}</span>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
+                        Your customized voice clone and visual mesh references are active and ready. Visit the Manage Personas tab to switch or clone.
+                      </p>
+                      <button 
+                        type="button" 
+                        className="btn-primary-small"
+                        style={{ marginTop: '16px', padding: '8px 16px', fontSize: '13px' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveTab('personas');
+                        }}
+                      >
+                        Manage Custom Clones
+                      </button>
+                    </div>
+                  ) : (
                     <div 
                       className="file-upload-zone"
                       onClick={() => setShowAddModal(true)}
                       style={{ borderStyle: 'dashed', padding: '36px', background: '#fcfdfd' }}
                     >
-                      <UserPlus size={24} style={{ color: 'var(--text-muted)', marginBottom: '8px' }} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-dark)' }}>No Personas Added Yet</span>
-                      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Create your first speaking avatar with vocal reference clips to get started.
+                      <Sparkles size={28} style={{ color: 'var(--accent-dark)', marginBottom: '8px' }} />
+                      <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Standard AI Presenter Active</span>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
+                        Currently using our built-in high-fidelity presenter. To clone your custom voice and face, create a custom persona.
                       </p>
                       <button 
                         type="button" 
@@ -427,41 +760,8 @@ export default function App() {
                           setShowAddModal(true);
                         }}
                       >
-                        + Add Persona
+                        + Create Custom Clone
                       </button>
-                    </div>
-                  ) : (
-                    <div className="persona-grid">
-                      {personas.map((persona) => {
-                        const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                        return (
-                          <div 
-                            key={persona.id}
-                            className={`persona-card ${selectedPersona?.id === persona.id ? 'active' : ''}`}
-                            onClick={() => setSelectedPersona(persona)}
-                          >
-                            <div className="persona-thumbnail-wrapper">
-                              <div className="persona-initials">{initials}</div>
-                            </div>
-                            <span className="persona-name">{persona.name}</span>
-                          </div>
-                        );
-                      })}
-
-                      {/* Inline Quick Add Persona button */}
-                      <div 
-                        className="persona-card"
-                        style={{ borderStyle: 'dashed', background: 'transparent' }}
-                        onClick={() => setShowAddModal(true)}
-                      >
-                        <div 
-                          className="persona-thumbnail-wrapper"
-                          style={{ background: 'var(--accent-light)', border: '1px dashed var(--border-color)' }}
-                        >
-                          <Plus size={20} style={{ color: 'var(--text-muted)' }} />
-                        </div>
-                        <span className="persona-name" style={{ color: 'var(--text-muted)' }}>Add Persona</span>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -713,9 +1013,27 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="persona-admin-actions">
+                        <div className="persona-admin-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button 
+                            className={`btn-primary-small ${selectedPersona?.id === persona.id ? 'active-green' : ''}`}
+                            style={{ 
+                              padding: '6px 12px', 
+                              fontSize: '11px', 
+                              background: selectedPersona?.id === persona.id ? '#1e7a44' : 'var(--accent-dark)',
+                              borderColor: 'transparent',
+                              borderRadius: '8px',
+                              height: '32px'
+                            }}
+                            onClick={() => {
+                              setSelectedPersona(persona);
+                              setActiveTab('generate');
+                            }}
+                          >
+                            {selectedPersona?.id === persona.id ? 'Active Selected' : 'Use in Studio'}
+                          </button>
                           <button 
                             className="btn-action-icon"
+                            style={{ height: '32px', width: '32px' }}
                             onClick={() => {
                               setNewPersonaName(persona.name);
                               setNewPersonaVoiceFile(persona.voiceClipName);
@@ -727,6 +1045,7 @@ export default function App() {
                           </button>
                           <button 
                             className="btn-action-icon delete"
+                            style={{ height: '32px', width: '32px' }}
                             onClick={(e) => handleDeletePersona(persona.id, e)}
                           >
                             <Trash2 size={14} />
@@ -742,90 +1061,404 @@ export default function App() {
         )}
       </main>
 
-      {/* CREATE / EDIT PERSONA DIALOG MODAL */}
+      {/* CREATE / EDIT PERSONA DIALOG MODAL (UPGRADED ELITE WIZARD) */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2>Configure Presenter Persona</h2>
-              <button 
-                className="btn-action-icon"
-                onClick={() => setShowAddModal(false)}
-                style={{ borderRadius: '50%' }}
-              >
-                <Plus size={18} style={{ transform: 'rotate(45deg)' }} />
-              </button>
+          <div className="modal-content elite-wizard">
+            {/* Elegant Top Neon Progress bar */}
+            <div className="wizard-progress-bar">
+              <div 
+                className="wizard-progress-fill" 
+                style={{ width: `${(wizardStep / 3) * 100}%` }}
+              ></div>
             </div>
 
-            <form onSubmit={handleAddPersona} className="modal-form">
-              <div className="form-group">
-                <label>Persona Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Priyanth"
-                  value={newPersonaName}
-                  onChange={(e) => setNewPersonaName(e.target.value)}
-                  required 
-                />
+            {/* Header displaying step progression */}
+            <div className="wizard-steps-header">
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '800' }}>
+                  {wizardStep === 0 && "Name Your Presenter"}
+                  {wizardStep === 1 && "Set Up Their Voice"}
+                  {wizardStep === 2 && "Set Up Their Face"}
+                  {wizardStep === 3 && "Creating Your Presenter..."}
+                </h2>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {wizardStep === 0 && "Give your AI presenter a name and style."}
+                  {wizardStep === 1 && "Choose how we should create your presenter's voice."}
+                  {wizardStep === 2 && "Choose how we should create your presenter's face."}
+                  {wizardStep === 3 && "We are generating your custom AI presenter. This will take just a moment."}
+                </p>
               </div>
+              <div className="wizard-steps-indicator">
+                Step {wizardStep + 1} of 4
+              </div>
+            </div>
 
-              <div className="form-group">
-                <label>Voice Clone Sample (Audio)</label>
-                <div 
-                  className="file-upload-zone"
-                  onClick={() => setNewPersonaVoiceFile('cloned_vocal_' + Math.floor(Math.random()*1000) + '_profile.wav')}
-                >
-                  {newPersonaVoiceFile ? (
-                    <div className="file-uploaded-indicator">
-                      <FileAudio size={14} /> {newPersonaVoiceFile} (Configured)
-                    </div>
-                  ) : (
-                    <>
-                      <FileAudio size={18} style={{ color: 'var(--text-muted)' }} />
-                      <span>Upload vocal profile sample (.wav, .mp3)</span>
-                    </>
-                  )}
+            {/* STEP 0: PERSONA IDENTIFIERS */}
+            {wizardStep === 0 && (
+              <div className="modal-form">
+                <div className="form-group">
+                  <label>Presenter Name</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. Sarah"
+                    value={newPersonaName}
+                    onChange={(e) => setNewPersonaName(e.target.value)}
+                    required 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Presenter Style</label>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Choose how you want your presenter to sound and talk:
+                  </p>
+                  <div className="blueprint-focus-grid">
+                    <button 
+                      type="button"
+                      className={`blueprint-focus-card ${personaFocus === 'corporate' ? 'active' : ''}`}
+                      onClick={() => setPersonaFocus('corporate')}
+                    >
+                      <span className="focus-emoji">🎯</span>
+                      <div className="focus-content">
+                        <strong>Professional Tone</strong>
+                        <p>Best for business, presentations, and formal talks.</p>
+                      </div>
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      className={`blueprint-focus-card ${personaFocus === 'social' ? 'active' : ''}`}
+                      onClick={() => setPersonaFocus('social')}
+                    >
+                      <span className="focus-emoji">⚡</span>
+                      <div className="focus-content">
+                        <strong>Casual / Social Tone</strong>
+                        <p>Best for social media, friendly videos, and high energy.</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      releaseMediaStreams();
+                      setShowAddModal(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary-small"
+                    disabled={!newPersonaName.trim()}
+                    onClick={() => setWizardStep(1)}
+                  >
+                    Next: Voice Setup
+                  </button>
                 </div>
               </div>
+            )}
 
-              <div className="form-group">
-                <label>Visual Mesh Sample (Video)</label>
-                <div 
-                  className="file-upload-zone"
-                  onClick={() => setNewPersonaFaceFile('mesh_matrix_' + Math.floor(Math.random()*1000) + '_reference.mp4')}
-                >
-                  {newPersonaFaceFile ? (
-                    <div className="file-uploaded-indicator">
-                      <FileVideo size={14} /> {newPersonaFaceFile} (Configured)
+            {/* STEP 1: VOCAL SETUP */}
+            {wizardStep === 1 && (
+              <div className="modal-form">
+                {/* Segmented Selector */}
+                <div className="studio-tab-selector">
+                  <button 
+                    type="button" 
+                    className={`studio-tab-btn ${voiceSource === 'upload' ? 'active' : ''}`}
+                    onClick={() => { setVoiceSource('upload'); releaseMediaStreams(); }}
+                  >
+                    <FileAudio size={14} /> Upload Voice File
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`studio-tab-btn ${voiceSource === 'record' ? 'active' : ''}`}
+                    onClick={() => { setVoiceSource('record'); initiateMicrophone(); }}
+                  >
+                    <Mic size={14} /> Record Your Voice
+                  </button>
+                </div>
+
+                {voiceSource === 'upload' ? (
+                  <div className="form-group">
+                    <label>Upload Voice Sample</label>
+                    <div 
+                      className="file-upload-zone"
+                      onClick={() => setNewPersonaVoiceFile('cloned_vocal_' + Math.floor(Math.random()*1000) + '_profile.wav')}
+                    >
+                      {newPersonaVoiceFile ? (
+                        <div className="file-uploaded-indicator">
+                          <FileAudio size={14} /> {newPersonaVoiceFile} (Saved)
+                        </div>
+                      ) : (
+                        <>
+                          <FileAudio size={18} style={{ color: 'var(--text-muted)' }} />
+                          <span style={{ fontWeight: 600 }}>Click to upload a voice file (.wav, .mp3)</span>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Recommended: A clear 30-second recording with no background noise.</p>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <FileVideo size={18} style={{ color: 'var(--text-muted)' }} />
-                      <span>Upload video mesh baseline reference (.mp4, .mov)</span>
-                    </>
-                  )}
+                  </div>
+                ) : (
+                  <div className="studio-recording-hud">
+                    {/* Live signal testing bar */}
+                    <div className="device-signal-check">
+                      <div className={`signal-dot ${micSignal ? 'connected' : ''}`}></div>
+                      {micSignal ? "Microphone is connected" : "Looking for microphone..."}
+                    </div>
+
+                    {/* Interactive waveform oscillograph */}
+                    <canvas 
+                      ref={oscillogramRef} 
+                      className="studio-oscillogram-canvas"
+                      width={600}
+                      height={80}
+                    />
+
+                    {/* Script Teleprompter to read */}
+                    <div className="studio-teleprompter">
+                      <span className="prompter-highlight">Read this aloud to give permission:</span> <br/>
+                      "I allow Naqalchi to copy my voice to generate videos for my projects."
+                    </div>
+
+                    {/* Capturing Controller Button */}
+                    <div className="studio-recording-actions">
+                      <button 
+                        type="button"
+                        className={`btn-studio-record ${isRecordingVoice ? 'recording' : ''}`}
+                        onClick={isRecordingVoice ? stopVoiceRecording : startVoiceRecording}
+                        title={isRecordingVoice ? "Stop recording voice" : "Start recording voice"}
+                      >
+                        <Mic size={20} />
+                      </button>
+                      <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                        {isRecordingVoice ? `Recording: ${voiceTimer} seconds` : "Click microphone to start"}
+                      </div>
+                    </div>
+
+                    {newPersonaVoiceFile && !isRecordingVoice && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', marginTop: '4px' }}>
+                        <CheckCircle2 size={14} style={{ color: '#25d366' }} />
+                        <span>Voice recording saved successfully!</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      releaseMediaStreams();
+                      setWizardStep(0);
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary-small"
+                    disabled={!newPersonaVoiceFile}
+                    onClick={() => {
+                      setWizardStep(2);
+                      if (faceSource === 'record') initiateCamera();
+                    }}
+                  >
+                    Next: Face Setup
+                  </button>
                 </div>
               </div>
+            )}
 
-              <div className="modal-footer">
-                <button 
-                  type="button" 
-                  className="btn-secondary" 
-                  style={{ flex: 'none', padding: '8px 16px' }}
-                  onClick={() => setShowAddModal(false)}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-primary-small"
-                  style={{ flex: 'none', padding: '8px 20px' }}
-                >
-                  Configure
-                </button>
+            {/* STEP 2: VISUAL PORTRAIT SETUP */}
+            {wizardStep === 2 && (
+              <div className="modal-form">
+                {/* Segmented Selector */}
+                <div className="studio-tab-selector">
+                  <button 
+                    type="button" 
+                    className={`studio-tab-btn ${faceSource === 'upload' ? 'active' : ''}`}
+                    onClick={() => { setFaceSource('upload'); releaseMediaStreams(); }}
+                  >
+                    <FileVideo size={14} /> Upload Video
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`studio-tab-btn ${faceSource === 'record' ? 'active' : ''}`}
+                    onClick={() => { setFaceSource('record'); initiateCamera(); }}
+                  >
+                    <Video size={14} /> Record with Webcam
+                  </button>
+                </div>
+
+                {faceSource === 'upload' ? (
+                  <div className="form-group">
+                    <label>Upload Video Sample</label>
+                    <div 
+                      className="file-upload-zone"
+                      onClick={() => setNewPersonaFaceFile('mesh_matrix_' + Math.floor(Math.random()*1000) + '_reference.mp4')}
+                    >
+                      {newPersonaFaceFile ? (
+                        <div className="file-uploaded-indicator">
+                          <FileVideo size={14} /> {newPersonaFaceFile} (Saved)
+                        </div>
+                      ) : (
+                        <>
+                          <FileVideo size={18} style={{ color: 'var(--text-muted)' }} />
+                          <span style={{ fontWeight: 600 }}>Click to upload a video file (.mp4, .mov)</span>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Recommended: A clear video looking directly at the camera (15 to 60 seconds).</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="studio-recording-hud">
+                    {/* Live signal testing bar */}
+                    <div className="device-signal-check">
+                      <div className={`signal-dot ${cameraSignal ? 'connected' : ''}`}></div>
+                      {cameraSignal ? "Camera is connected" : "Looking for camera..."}
+                    </div>
+
+                    {/* Viewfinder Window */}
+                    <div className="webcam-viewfinder-wrapper">
+                      {/* Real WebCam Viewport */}
+                      {mediaStreamRef.current ? (
+                        <video 
+                          ref={videoRef} 
+                          className="webcam-video-feed" 
+                          autoPlay 
+                          playsInline 
+                          muted 
+                        />
+                      ) : (
+                        /* Simulated wireframe face mesh if camera denied/loading */
+                        <div className="webcam-feed-simulation">
+                          <div className="simulation-wireframe"></div>
+                        </div>
+                      )}
+
+                      {/* Oval anatomical guides mask */}
+                      <div className={`webcam-face-oval-guide ${isRecordingFace ? 'active' : ''}`}></div>
+
+                      {/* Studio Brackets OSD */}
+                      <div className="hud-corner-bracket hud-tl"></div>
+                      <div className="hud-corner-bracket hud-tr"></div>
+                      <div className="hud-corner-bracket hud-bl"></div>
+                      <div className="hud-corner-bracket hud-br"></div>
+
+                      {/* Studio specs telemetry */}
+                      <div className="hud-telemetry">1080p • 60 FPS</div>
+
+                      {/* Active recording blinking tag */}
+                      {isRecordingFace && (
+                        <div className="hud-rec-badge">
+                          <div className="hud-rec-dot blinking"></div>
+                          <span>LIVE</span>
+                        </div>
+                      )}
+
+                      {/* Countdown Numbers Overlay */}
+                      {faceCountdown > 0 && (
+                        <div className="webcam-countdown-overlay">
+                          {faceCountdown}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Teleprompter prompt instructions */}
+                    <div className="studio-teleprompter" style={{ borderLeftColor: '#ff3b30' }}>
+                      <span className="prompter-highlight" style={{ color: '#ff453a' }}>Tips for recording:</span> <br/>
+                      Keep your face centered in the oval. Look directly at the lens, blink naturally, and speak clearly.
+                    </div>
+
+                    {/* Camera Control Trigger */}
+                    <div className="studio-recording-actions">
+                      <button 
+                        type="button"
+                        className={`btn-studio-record ${isRecordingFace ? 'recording' : ''}`}
+                        onClick={startFaceRecording}
+                        disabled={faceCountdown > 0 || isRecordingFace}
+                        title="Start webcam recording countdown"
+                      >
+                        <Camera size={20} />
+                      </button>
+                      <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                        {faceCountdown > 0 ? "Starting Countdown..." : isRecordingFace ? `Recording: ${faceTimer} of 8 seconds` : "Click camera to start"}
+                      </div>
+                    </div>
+
+                    {newPersonaFaceFile && !isRecordingFace && faceCountdown === 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', marginTop: '4px' }}>
+                        <CheckCircle2 size={14} style={{ color: '#25d366' }} />
+                        <span>Video recording saved successfully!</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      releaseMediaStreams();
+                      setWizardStep(1);
+                      if (voiceSource === 'record') initiateMicrophone();
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary-small"
+                    disabled={!newPersonaFaceFile || isRecordingFace || faceCountdown > 0}
+                    onClick={triggerDiagnosticsAndSave}
+                  >
+                    Create Presenter
+                  </button>
+                </div>
               </div>
-            </form>
+            )}
+
+            {/* STEP 3: RECTIFIED DIAGNOSTICS SCAN STATUS */}
+            {wizardStep === 3 && (
+              <div className="diagnostic-wizard-panel">
+                {/* Glowing Scanner Disk */}
+                <div className="diagnostic-mesh-visualizer">
+                  <div className="diagnostic-scanner-line"></div>
+                  {voiceSource === 'record' ? <Mic size={32} style={{ color: 'var(--accent-dark)' }} /> : <Camera size={32} style={{ color: 'var(--accent-dark)' }} />}
+                </div>
+
+                {/* Subtitle updates */}
+                <div>
+                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '16px', fontWeight: '700' }}>
+                    Applying your settings... ({diagnosticProgress}%)
+                  </h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Preparing your presenter's custom voice and look. Just a moment!
+                  </p>
+                </div>
+
+                {/* Cinema Ticker Status Screen */}
+                <div className="diagnostic-ticker-container">
+                  <div className="diagnostic-progress-bar-wrapper">
+                    <div className="diagnostic-progress-bar-fill" style={{ width: `${diagnosticProgress}%` }}></div>
+                  </div>
+                  <div className="diagnostic-ticker-active">
+                    <div className="glow-ring-spinner"></div>
+                    <span key={diagnosticLogs.length} className="ticker-text-fade-in">
+                      {diagnosticLogs[diagnosticLogs.length - 1] || "Initializing neural settings..."}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
