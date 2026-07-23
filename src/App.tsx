@@ -564,6 +564,21 @@ export default function App() {
   }, [wizardStep]);
 
   // Commit Persona to State
+  // Clean up and close wizard
+  const resetAndCloseWizard = (targetTab?: 'generate' | 'personas') => {
+    setShowAddModal(false);
+    setNewPersonaName('');
+    setNewPersonaVoiceFile(null);
+    setNewPersonaFaceFile(null);
+    setWizardStep(0);
+    setVoiceSource('upload');
+    setFaceSource('upload');
+    if (targetTab) {
+      setActiveTab(targetTab);
+    }
+  };
+
+  // Commit Persona to State
   const saveNewPersonaToRoster = () => {
     if (!newPersonaName.trim()) return;
 
@@ -580,15 +595,9 @@ export default function App() {
     setPersonas(updated);
     setSelectedPersona(newPersona);
     
-    // Close & reset
+    // Keep name in memory for the success step, release streams and route to step 4 (Success)
     releaseMediaStreams();
-    setShowAddModal(false);
-    setNewPersonaName('');
-    setNewPersonaVoiceFile(null);
-    setNewPersonaFaceFile(null);
-    setWizardStep(0);
-    setVoiceSource('upload');
-    setFaceSource('upload');
+    setWizardStep(4);
   };
 
   // Start Pipeline Trigger
@@ -723,7 +732,6 @@ export default function App() {
                       className="file-upload-zone"
                       style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: 'rgba(22, 42, 38, 0.12)', padding: '36px', background: '#f4faf7' }}
                     >
-                      <UserCheck size={28} style={{ color: 'var(--accent-dark)', marginBottom: '8px' }} />
                       <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Custom Clone Active: {selectedPersona.name}</span>
                       <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
                         Your customized voice clone and visual mesh references are active and ready. Visit the Manage Personas tab to switch or clone.
@@ -746,7 +754,6 @@ export default function App() {
                       onClick={() => setShowAddModal(true)}
                       style={{ borderStyle: 'dashed', padding: '36px', background: '#fcfdfd' }}
                     >
-                      <Sparkles size={28} style={{ color: 'var(--accent-dark)', marginBottom: '8px' }} />
                       <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Standard AI Presenter Active</span>
                       <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
                         Currently using our built-in high-fidelity presenter. To clone your custom voice and face, create a custom persona.
@@ -1069,7 +1076,7 @@ export default function App() {
             <div className="wizard-progress-bar">
               <div 
                 className="wizard-progress-fill" 
-                style={{ width: `${(wizardStep / 3) * 100}%` }}
+                style={{ width: wizardStep === 4 ? '100%' : `${(wizardStep / 3) * 100}%` }}
               ></div>
             </div>
 
@@ -1081,16 +1088,18 @@ export default function App() {
                   {wizardStep === 1 && "Set Up Their Voice"}
                   {wizardStep === 2 && "Set Up Their Face"}
                   {wizardStep === 3 && "Creating Your Presenter..."}
+                  {wizardStep === 4 && "✨ Presenter Created Successfully!"}
                 </h2>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                   {wizardStep === 0 && "Give your AI presenter a name and style."}
                   {wizardStep === 1 && "Choose how we should create your presenter's voice."}
                   {wizardStep === 2 && "Choose how we should create your presenter's face."}
                   {wizardStep === 3 && "We are generating your custom AI presenter. This will take just a moment."}
+                  {wizardStep === 4 && "Your voice clone and face references are compiled and live!"}
                 </p>
               </div>
-              <div className="wizard-steps-indicator">
-                Step {wizardStep + 1} of 4
+              <div className="wizard-steps-indicator" style={{ background: wizardStep === 4 ? '#e6fbf4' : 'rgba(15,28,26,0.04)', color: wizardStep === 4 ? '#00b894' : 'var(--text-dark)' }}>
+                {wizardStep === 4 ? "Complete!" : `Step ${wizardStep + 1} of 4`}
               </div>
             </div>
 
@@ -1456,6 +1465,47 @@ export default function App() {
                       {diagnosticLogs[diagnosticLogs.length - 1] || "Initializing neural settings..."}
                     </span>
                   </div>
+                </div>
+              </div>
+            )}
+            {/* STEP 4: SUCCESS CONFIRMATION AND ONBOARDING */}
+            {wizardStep === 4 && (
+              <div className="diagnostic-wizard-panel success-panel" style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+                {/* Huge animated floating success badge */}
+                <div className="success-badge-container">
+                  <div className="success-badge-glow"></div>
+                  <CheckCircle2 size={48} className="success-badge-icon" />
+                </div>
+
+                <div style={{ marginTop: '16px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '800', color: 'var(--text-dark)' }}>
+                    Presenter "{newPersonaName}" is Live!
+                  </h3>
+                  <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.5', maxWidth: '420px', margin: '8px auto 0' }}>
+                    Your custom presenter has been fully compiled and is now selected as your **active speaker clone** in the Video Studio.
+                  </p>
+                </div>
+
+                {/* Info Card explaining where it resides */}
+                <div className="success-destination-info">
+                  <span className="destination-icon">💡</span>
+                  <div style={{ textAlign: 'left', fontSize: '12.5px' }}>
+                    <strong>Where is it stored?</strong>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4' }}>
+                      All customized clones are saved under the <strong>Manage Personas</strong> tab in the left sidebar, where you can preview, switch, or delete them.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '20px', width: '100%', justifyContent: 'center', marginTop: '10px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-primary-small"
+                    style={{ maxWidth: '240px', width: '100%' }}
+                    onClick={() => resetAndCloseWizard('personas')}
+                  >
+                    Go to Cloned Persona
+                  </button>
                 </div>
               </div>
             )}

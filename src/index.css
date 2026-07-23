@@ -1712,3 +1712,71 @@ body {
   border-radius: 10px !important;
 }
 
+/* Wizard Step 4 Success Step Animations and Styles */
+.success-badge-container {
+  width: 80px;
+  height: 80px;
+  background: #e6fbf4;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px auto 16px;
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 184, 148, 0.15);
+  animation: success-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.success-badge-glow {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 184, 148, 0.15) 0%, rgba(0, 184, 148, 0) 70%);
+  animation: signal-pulse 2s infinite ease-in-out;
+}
+
+.success-badge-icon {
+  color: #00b894;
+  position: relative;
+  z-index: 2;
+  animation: check-scale 0.4s 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.2) both;
+}
+
+.success-destination-info {
+  background: #f4faf7;
+  border: 1px solid rgba(0, 184, 148, 0.12);
+  padding: 14px 18px;
+  border-radius: 12px;
+  max-width: 440px;
+  margin: 20px auto 0;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  box-shadow: inset 0 1px 3px rgba(15, 28, 26, 0.02);
+}
+
+.destination-icon {
+  font-size: 16px;
+  background: rgba(0, 184, 148, 0.08);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+@keyframes success-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes check-scale {
+  0% { transform: scale(0); }
+  100% { transform: scale(1); }
+}
+
