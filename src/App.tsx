@@ -977,18 +977,30 @@ export default function App() {
               </div>
             ) : (
               <div className="persona-admin-grid">
-                {personas.map((persona, index) => {
+                {personas.map((persona) => {
                   const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                   const isActive = selectedPersona?.id === persona.id;
 
-                  // Dynamic 4-color luxury rotation from user reference: Lavender, Mint-Green, Ice-Blue, Champagne-Grey
+                  // 6 ultra-premium pastel gradients: Lavender, Mint-Green, Ice-Blue, Champagne-Grey, Dusty Peach, Soft Buttercup
                   const gradients = [
                     { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' },
                     { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' },
                     { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' },
-                    { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' }
+                    { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' },
+                    { bg: 'linear-gradient(135deg, #ffdcd0 0%, #fca49b 100%)', shadow: 'rgba(252, 164, 155, 0.22)', border: 'rgba(255, 220, 208, 0.35)' },
+                    { bg: 'linear-gradient(135deg, #fff3d0 0%, #e2c08c 100%)', shadow: 'rgba(226, 192, 140, 0.22)', border: 'rgba(255, 243, 208, 0.35)' }
                   ];
-                  const gradient = gradients[index % gradients.length];
+
+                  // Stable hash helper to choose a random color that stays consistent on reload
+                  const getStableIndex = (str: string) => {
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                    }
+                    return Math.abs(hash);
+                  };
+
+                  const gradient = gradients[getStableIndex(persona.id || persona.name) % gradients.length];
 
                   return (
                     <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
