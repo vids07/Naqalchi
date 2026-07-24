@@ -17,7 +17,8 @@ import {
   PanelLeftClose,
   Mic,
   Video,
-  Camera
+  Camera,
+  ChevronDown
 } from 'lucide-react';
 
 interface Persona {
@@ -115,6 +116,10 @@ export default function App() {
   const [newPersonaName, setNewPersonaName] = useState<string>('');
   const [newPersonaVoiceFile, setNewPersonaVoiceFile] = useState<string | null>(null);
   const [newPersonaFaceFile, setNewPersonaFaceFile] = useState<string | null>(null);
+
+  // Custom Styled Dropdown Menu States
+  const [vocalDropdownOpen, setVocalDropdownOpen] = useState<boolean>(false);
+  const [avatarDropdownOpen, setAvatarDropdownOpen] = useState<boolean>(false);
 
   // Upgraded Premium Wizard State Systems
   const [wizardStep, setWizardStep] = useState<number>(0); // 0: Name, 1: Voice, 2: Face, 3: Diagnostics
@@ -810,33 +815,116 @@ export default function App() {
                     </h3>
                     
                     {/* Simplified user-friendly labels */}
-                    <div className="settings-group">
+                    {/* Simplified user-friendly labels */}
+                    <div className="settings-group" style={{ position: 'relative' }}>
                       <span className="settings-label">Vocal Clone Setting</span>
-                      <select 
-                        className="custom-select"
-                        value={voiceModel}
-                        onChange={(e) => setVoiceModel(e.target.value)}
-                      >
-                        <option value="Standard Voice">Standard Voice (Recommended)</option>
-                        <option value="Conversational Narrator">Conversational Narrator</option>
-                        <option value="Warm Conversational">Warm Conversational</option>
-                      </select>
+                      <div className="custom-dropdown-container">
+                        <button 
+                          type="button"
+                          className={`custom-dropdown-trigger ${vocalDropdownOpen ? 'open' : ''}`}
+                          onClick={() => {
+                            setVocalDropdownOpen(!vocalDropdownOpen);
+                            setAvatarDropdownOpen(false);
+                          }}
+                        >
+                          <span>{
+                            voiceModel === "Standard Voice" ? "Standard Voice (Recommended)" :
+                            voiceModel === "Conversational Narrator" ? "Conversational Narrator" :
+                            "Warm Conversational"
+                          }</span>
+                          <ChevronDown size={16} className={`dropdown-arrow ${vocalDropdownOpen ? 'open' : ''}`} />
+                        </button>
+                        {vocalDropdownOpen && (
+                          <div className="custom-dropdown-list">
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${voiceModel === "Standard Voice" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setVoiceModel("Standard Voice");
+                                setVocalDropdownOpen(false);
+                              }}
+                            >
+                              Standard Voice (Recommended)
+                            </button>
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${voiceModel === "Conversational Narrator" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setVoiceModel("Conversational Narrator");
+                                setVocalDropdownOpen(false);
+                              }}
+                            >
+                              Conversational Narrator
+                            </button>
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${voiceModel === "Warm Conversational" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setVoiceModel("Warm Conversational");
+                                setVocalDropdownOpen(false);
+                              }}
+                            >
+                              Warm Conversational
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="settings-group">
+                    <div className="settings-group" style={{ position: 'relative' }}>
                       <span className="settings-label">Avatar Face Setting</span>
-                      <select 
-                        className="custom-select"
-                        value={faceModel}
-                        onChange={(e) => setFaceModel(e.target.value)}
-                      >
-                        <option value="Standard Avatar">Standard Avatar (Lipsynced)</option>
-                        <option value="Expressive Cinematic">Expressive Cinematic</option>
-                        <option value="Ultra-HD Portrait">Ultra-HD Portrait</option>
-                      </select>
+                      <div className="custom-dropdown-container">
+                        <button 
+                          type="button"
+                          className={`custom-dropdown-trigger ${avatarDropdownOpen ? 'open' : ''}`}
+                          onClick={() => {
+                            setAvatarDropdownOpen(!avatarDropdownOpen);
+                            setVocalDropdownOpen(false);
+                          }}
+                        >
+                          <span>{
+                            faceModel === "Standard Avatar" ? "Standard Avatar (Lipsynced)" :
+                            faceModel === "Expressive Cinematic" ? "Expressive Cinematic" :
+                            "Ultra-HD Portrait"
+                          }</span>
+                          <ChevronDown size={16} className={`dropdown-arrow ${avatarDropdownOpen ? 'open' : ''}`} />
+                        </button>
+                        {avatarDropdownOpen && (
+                          <div className="custom-dropdown-list">
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${faceModel === "Standard Avatar" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setFaceModel("Standard Avatar");
+                                setAvatarDropdownOpen(false);
+                              }}
+                            >
+                              Standard Avatar (Lipsynced)
+                            </button>
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${faceModel === "Expressive Cinematic" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setFaceModel("Expressive Cinematic");
+                                setAvatarDropdownOpen(false);
+                              }}
+                            >
+                              Expressive Cinematic
+                            </button>
+                            <button 
+                              type="button"
+                              className={`custom-dropdown-option ${faceModel === "Ultra-HD Portrait" ? 'selected' : ''}`}
+                              onClick={() => {
+                                setFaceModel("Ultra-HD Portrait");
+                                setAvatarDropdownOpen(false);
+                              }}
+                            >
+                              Ultra-HD Portrait
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-
-                    <div style={{ flexGrow: 1, minHeight: '40px' }}></div>
 
                     <button 
                       className="btn-generate"
