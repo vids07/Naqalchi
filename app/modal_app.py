@@ -86,7 +86,8 @@ if modal:
         
         adapter = OmniVoiceAdapter()
         
-        if voice_sample_bytes:
+        # Only treat voice_sample_bytes as a valid file if it's not the mock placeholder and has content
+        if voice_sample_bytes and voice_sample_bytes != b"mock_sample_bytes" and len(voice_sample_bytes) > 100:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                 tmp.write(voice_sample_bytes)
                 tmp.flush()

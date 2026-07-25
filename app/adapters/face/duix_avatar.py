@@ -86,16 +86,31 @@ class DuixAvatarAdapter(FaceAdapter):
                 image_path = None
 
         import subprocess
+        
+        # Determine the exact duration of the audio file to match video length perfectly
+        duration = 5.0
+        try:
+            cmd_probe = [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+            ]
+            res = subprocess.run(cmd_probe, capture_output=True, text=True, check=True)
+            duration = float(res.stdout.strip())
+        except Exception as e:
+            print(f"[DuixAvatar] Could not parse audio duration using ffprobe: {e}. Defaulting to 5.0 seconds.")
+
         try:
             if image_path and os.path.exists(image_path):
-                # Generate MP4 combining the avatar image looped with the generated audio track
+                # Generate standard MP4 with explicit duration, baseline profile, and standard GOP
                 cmd = [
                     "ffmpeg", "-y",
-                    "-loop", "1", "-i", image_path,
+                    "-loop", "1", "-framerate", "25", "-i", image_path,
                     "-i", audio_path,
-                    "-c:v", "libx264", "-tune", "stillimage",
+                    "-c:v", "libx264",
+                    "-profile:v", "baseline", "-level", "3.0",
                     "-c:a", "aac", "-b:a", "192k",
-                    "-pix_fmt", "yuv420p", "-shortest",
+                    "-pix_fmt", "yuv420p",
+                    "-t", f"{duration:.3f}",
                     output_path
                 ]
             else:
@@ -104,8 +119,11 @@ class DuixAvatarAdapter(FaceAdapter):
                     "ffmpeg", "-y",
                     "-f", "lavfi", "-i", "color=c=0x111e1c:s=640x360",
                     "-i", audio_path,
-                    "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
-                    "-pix_fmt", "yuv420p", "-shortest",
+                    "-c:v", "libx264",
+                    "-profile:v", "baseline", "-level", "3.0",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-pix_fmt", "yuv420p",
+                    "-t", f"{duration:.3f}",
                     output_path
                 ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

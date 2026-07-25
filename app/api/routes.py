@@ -38,19 +38,33 @@ async def create_persona(
     voice_clip: Optional[UploadFile] = File(None),
     face_clip: Optional[UploadFile] = File(None)
 ):
+    import os
+    from app.config.settings import settings
+
     persona_id = str(uuid.uuid4())
     
-    # In a fully deployed version, you would write these files to the uploads folder:
-    # upload_path = os.path.join(settings.UPLOAD_DIR, voice_clip.filename)
-    # with open(upload_path, "wb") as f:
-    #     f.write(await voice_clip.read())
+    voice_clip_name = None
+    if voice_clip and voice_clip.filename:
+        voice_clip_name = voice_clip.filename
+        upload_path = os.path.join(settings.UPLOAD_DIR, voice_clip.filename)
+        with open(upload_path, "wb") as f:
+            content = await voice_clip.read()
+            f.write(content)
+            
+    face_clip_name = None
+    if face_clip and face_clip.filename:
+        face_clip_name = face_clip.filename
+        upload_path = os.path.join(settings.UPLOAD_DIR, face_clip.filename)
+        with open(upload_path, "wb") as f:
+            content = await face_clip.read()
+            f.write(content)
     
     new_persona = Persona(
         id=persona_id,
         name=name,
         avatarUrl=None,
-        voiceClipName=voice_clip.filename if voice_clip else None,
-        faceClipName=face_clip.filename if face_clip else None
+        voiceClipName=voice_clip_name,
+        faceClipName=face_clip_name
     )
     mock_db.add_persona(new_persona)
     return new_persona

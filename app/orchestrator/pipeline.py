@@ -17,12 +17,14 @@ class GenerationPipeline:
         # Cache of initialized adapters
         self.voice_adapters = {
             "omnivoice": OmniVoiceAdapter(),
+            "omni-voice": OmniVoiceAdapter(),
             "cosyvoice": OmniVoiceAdapter(),
             "chattts": OmniVoiceAdapter(),
             "bark": OmniVoiceAdapter()
         }
         self.face_adapters = {
             "duix_avatar": DuixAvatarAdapter(),
+            "duix-avatar": DuixAvatarAdapter(),
             "liveportrait": DuixAvatarAdapter(),
             "sadtalker": DuixAvatarAdapter(),
             "wav2lip": DuixAvatarAdapter()
@@ -66,6 +68,27 @@ class GenerationPipeline:
                 persona_voice_sample = p.voiceClipName
                 persona_face_frame = p.faceClipName or persona_face_frame
                 break
+
+        # Resolve actual physical file paths for voice and face clips
+        voice_sample_path = None
+        if persona_voice_sample:
+            possible_path = os.path.join(settings.UPLOAD_DIR, persona_voice_sample)
+            if os.path.exists(possible_path):
+                voice_sample_path = possible_path
+            elif os.path.exists(persona_voice_sample):
+                voice_sample_path = persona_voice_sample
+
+        face_frame_path = None
+        if persona_face_frame:
+            possible_path = os.path.join(settings.UPLOAD_DIR, persona_face_frame)
+            if os.path.exists(possible_path):
+                face_frame_path = possible_path
+            else:
+                public_path = os.path.join(settings.BASE_DIR, "..", "public", persona_face_frame)
+                if os.path.exists(public_path):
+                    face_frame_path = public_path
+                elif os.path.exists(persona_face_frame):
+                    face_frame_path = persona_face_frame
                 
         # 2. Resolve Voice Adapter
         v_adapter_name = voice_model.lower()
@@ -83,7 +106,7 @@ class GenerationPipeline:
         
         # Check if the user is running real models on Modal
         use_modal = False
-        if v_adapter_name in ["cosyvoice", "chattts", "bark"] or f_adapter_name in ["liveportrait", "sadtalker", "wav2lip"]:
+        if v_adapter_name in ["cosyvoice", "chattts", "bark", "omnivoice", "omni-voice"] or f_adapter_name in ["liveportrait", "sadtalker", "wav2lip", "duix_avatar", "duix-avatar"]:
             use_modal = True
 
         audio_file = None
@@ -96,8 +119,16 @@ class GenerationPipeline:
                 # Call voice generation on Modal
                 print("[Orchestrator] Running Voice synthesis remotely on Modal cloud...")
                 remote_voice = modal.Function.from_name("naqalchi-pipeline", "modal_generate_voice")
-                # Pass dummy bytes in place of empty uploads for mock pipeline demonstration
-                voice_bytes = remote_voice.remote(script, b"mock_sample_bytes")
+                
+                # Load real voice sample bytes if available
+                voice_bytes_input = None
+                if voice_sample_path and os.path.exists(voice_sample_path):
+                    print(f"[Orchestrator] Loading real voice reference clip: {voice_sample_path}")
+                    with open(voice_sample_path, "rb") as f:
+                        voice_bytes_input = f.read()
+                
+                # Pass real bytes or None (so modal_generate_voice can run SFT mode correctly)
+                voice_bytes = remote_voice.remote(script, voice_bytes_input)
                 
                 # Save returned audio stream to local output folder
                 audio_file = os.path.join(settings.OUTPUT_DIR, f"modal_voice_{int(time.time())}.wav")
@@ -107,7 +138,21 @@ class GenerationPipeline:
                 # Call avatar generation on Modal
                 print("[Orchestrator] Running Avatar lipsync remotely on Modal cloud...")
                 remote_avatar = modal.Function.from_name("naqalchi-pipeline", "modal_generate_avatar")
-                video_bytes = remote_avatar.remote(voice_bytes, b"mock_image_bytes")
+                
+                # Load real face frame bytes
+                face_bytes_input = None
+                if face_frame_path and os.path.exists(face_frame_path):
+                    print(f"[Orchestrator] Loading real face frame: {face_frame_path}")
+                    with open(face_frame_path, "rb") as f:
+                        face_bytes_input = f.read()
+                else:
+                    # Fallback to default priya_avatar.png in public folder if available
+                    fallback_face = os.path.join(settings.BASE_DIR, "..", "public", "priya_avatar.png")
+                    if os.path.exists(fallback_face):
+                        with open(fallback_face, "rb") as f:
+                            face_bytes_input = f.read()
+                            
+                video_bytes = remote_avatar.remote(voice_bytes, face_bytes_input or b"mock_image_bytes")
                 
                 # Save returned video stream to local output folder
                 video_file = os.path.join(settings.OUTPUT_DIR, f"modal_avatar_{int(time.time())}.mp4")
@@ -121,11 +166,11 @@ class GenerationPipeline:
         if not use_modal:
             # 4. Phase A: Text-to-Speech
             print("[Orchestrator] Phase A starting: Generating voice track...")
-            audio_file = voice_adapter.generate_voice(script, voice_sample_path=persona_voice_sample)
+            audio_file = voice_adapter.generate_voice(script, voice_sample_path=voice_sample_path)
             
             # 5. Phase B: Video Synthesis / Lip Sync
             print("[Orchestrator] Phase B starting: Synthesizing avatar facial structures...")
-            video_file = face_adapter.generate_avatar_video(audio_file, avatar_image_or_video_path=persona_face_frame)
+            video_file = face_adapter.generate_avatar_video(audio_file, avatar_image_or_video_path=face_frame_path or persona_face_frame)
         
         # 6. Run Quality Gates
         passed, msg = self.run_gates(audio_file, video_file)

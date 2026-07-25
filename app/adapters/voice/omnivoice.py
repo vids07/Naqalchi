@@ -69,23 +69,43 @@ class OmniVoiceAdapter(VoiceAdapter):
         time.sleep(1.0) # Simulate generation pass
         
         import subprocess
-        try:
-            # Estimate speaking duration: roughly 3 words per second (min 3 seconds)
-            words = text.split()
-            duration = max(3, len(words) // 3)
-            # Generate a clean playable sine-wave audio
-            cmd = [
-                "ffmpeg", "-y",
-                "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
-                "-acodec", "pcm_s16le", "-ar", "16000",
-                output_path
-            ]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception as e:
-            print(f"[OmniVoice] ffmpeg audio generation failed: {e}. Writing minimal wave header.")
-            with open(output_path, "wb") as f:
-                # Simple RIFF-WAVE minimal header for dummy generation
-                f.write(b'RIFF\x24\x08\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x40\x1f\x00\x00\x01\x00\x08\x00data\x00\x08\x00\x00' + b'\x00' * 1000)
+        import platform
+        success = False
+        
+        # Try Windows SAPI5 native speech synthesis first for a real human voice speaking the actual text
+        if platform.system().lower() == "windows":
+            ps_command = f"""
+            Add-Type -AssemblyName System.Speech
+            $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+            $synth.SetOutputToWaveFile('{output_path}')
+            $synth.Speak('{text.replace("'", "''")}')
+            $synth.Dispose()
+            """
+            try:
+                subprocess.run(["powershell", "-Command", ps_command], capture_output=True, text=True, check=True)
+                success = True
+                print("[OmniVoice] Speech synthesized successfully using Windows SAPI5 native synthesizer.")
+            except Exception as e:
+                print(f"[OmniVoice] Windows SAPI5 TTS failed: {e}. Falling back to ffmpeg sine wave.")
+                
+        if not success:
+            try:
+                # Estimate speaking duration: roughly 3 words per second (min 3 seconds)
+                words = text.split()
+                duration = max(3, len(words) // 3)
+                # Generate a clean playable sine-wave audio
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
+                    "-acodec", "pcm_s16le", "-ar", "16000",
+                    output_path
+                ]
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                print(f"[OmniVoice] ffmpeg audio generation failed: {e}. Writing minimal wave header.")
+                with open(output_path, "wb") as f:
+                    # Simple RIFF-WAVE minimal header for dummy generation
+                    f.write(b'RIFF\x24\x08\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x40\x1f\x00\x00\x01\x00\x08\x00data\x00\x08\x00\x00' + b'\x00' * 1000)
             
         print(f"[OmniVoice] Speech synthesized successfully. Saved to: {output_path}")
         return output_path
