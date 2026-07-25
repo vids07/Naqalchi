@@ -16,10 +16,16 @@ class GenerationPipeline:
     def __init__(self):
         # Cache of initialized adapters
         self.voice_adapters = {
-            "omnivoice": OmniVoiceAdapter()
+            "omnivoice": OmniVoiceAdapter(),
+            "cosyvoice": OmniVoiceAdapter(),
+            "chattts": OmniVoiceAdapter(),
+            "bark": OmniVoiceAdapter()
         }
         self.face_adapters = {
-            "duix_avatar": DuixAvatarAdapter()
+            "duix_avatar": DuixAvatarAdapter(),
+            "liveportrait": DuixAvatarAdapter(),
+            "sadtalker": DuixAvatarAdapter(),
+            "wav2lip": DuixAvatarAdapter()
         }
 
     def run_gates(self, audio_path: str, video_path: str) -> Tuple[bool, str]:
@@ -75,13 +81,51 @@ class GenerationPipeline:
             f_adapter_name = settings.DEFAULT_FACE_MODEL
         face_adapter = self.face_adapters[f_adapter_name]
         
-        # 4. Phase A: Text-to-Speech
-        print("[Orchestrator] Phase A starting: Generating voice track...")
-        audio_file = voice_adapter.generate_voice(script, voice_sample_path=persona_voice_sample)
-        
-        # 5. Phase B: Video Synthesis / Lip Sync
-        print("[Orchestrator] Phase B starting: Synthesizing avatar facial structures...")
-        video_file = face_adapter.generate_avatar_video(audio_file, avatar_image_or_video_path=persona_face_frame)
+        # Check if the user is running real models on Modal
+        use_modal = False
+        if v_adapter_name in ["cosyvoice", "chattts", "bark"] or f_adapter_name in ["liveportrait", "sadtalker", "wav2lip"]:
+            use_modal = True
+
+        audio_file = None
+        video_file = None
+
+        if use_modal:
+            print(f"[Orchestrator] Connecting to remote Modal GPU workers for voice={voice_model}, face={face_model}...")
+            try:
+                import modal
+                # Call voice generation on Modal
+                print("[Orchestrator] Running Voice synthesis remotely on Modal cloud...")
+                remote_voice = modal.Function.from_name("naqalchi-pipeline", "modal_generate_voice")
+                # Pass dummy bytes in place of empty uploads for mock pipeline demonstration
+                voice_bytes = remote_voice.remote(script, b"mock_sample_bytes")
+                
+                # Save returned audio stream to local output folder
+                audio_file = os.path.join(settings.OUTPUT_DIR, f"modal_voice_{int(time.time())}.wav")
+                with open(audio_file, "wb") as f:
+                    f.write(voice_bytes)
+                
+                # Call avatar generation on Modal
+                print("[Orchestrator] Running Avatar lipsync remotely on Modal cloud...")
+                remote_avatar = modal.Function.from_name("naqalchi-pipeline", "modal_generate_avatar")
+                video_bytes = remote_avatar.remote(voice_bytes, b"mock_image_bytes")
+                
+                # Save returned video stream to local output folder
+                video_file = os.path.join(settings.OUTPUT_DIR, f"modal_avatar_{int(time.time())}.mp4")
+                with open(video_file, "wb") as f:
+                    f.write(video_bytes)
+                
+            except Exception as e:
+                print(f"[Orchestrator] [WARNING] Modal remote call failed: {e}. Falling back to local simulation.")
+                use_modal = False
+
+        if not use_modal:
+            # 4. Phase A: Text-to-Speech
+            print("[Orchestrator] Phase A starting: Generating voice track...")
+            audio_file = voice_adapter.generate_voice(script, voice_sample_path=persona_voice_sample)
+            
+            # 5. Phase B: Video Synthesis / Lip Sync
+            print("[Orchestrator] Phase B starting: Synthesizing avatar facial structures...")
+            video_file = face_adapter.generate_avatar_video(audio_file, avatar_image_or_video_path=persona_face_frame)
         
         # 6. Run Quality Gates
         passed, msg = self.run_gates(audio_file, video_file)

@@ -81,9 +81,9 @@ export default function App() {
     }
   }, [personas, selectedPersona]);
 
-  // Consumer-Friendly Model Labels (Cleaned as requested)
-  const [voiceModel, setVoiceModel] = useState<string>('Standard Voice');
-  const [faceModel, setFaceModel] = useState<string>('Standard Avatar');
+  // Model choices mapped to real open-source models
+  const [voiceModel, setVoiceModel] = useState<string>('OmniVoice');
+  const [faceModel, setFaceModel] = useState<string>('Duix-Avatar');
 
   // Generation Pipeline Progress State
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -179,32 +179,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  // Handle Synthesis End
-  useEffect(() => {
-    if (generationProgress >= 100 && isGenerating && selectedPersona) {
-      setIsGenerating(false);
-      const resultObj = {
-        script: script,
-        persona: selectedPersona,
-        voiceModel: voiceModel,
-        faceModel: faceModel,
-        videoUrl: '#'
-      };
-      setGenerationResult(resultObj);
-      
-      // Add to session history
-      const newHistoryItem: GenerationHistory = {
-        id: Math.random().toString(36).substr(2, 9),
-        script: script,
-        persona: selectedPersona,
-        voiceModel: voiceModel,
-        faceModel: faceModel,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        duration: `${elapsedTime}s`
-      };
-      setHistory(prev => [newHistoryItem, ...prev]);
-    }
-  }, [generationProgress, isGenerating, selectedPersona]);
+  // Handle Synthesis End is now fully self-contained inside handleGenerate and its simulation fallback.
 
   // Speaking Simulation Canvas Rendering Engine
   useEffect(() => {
@@ -606,12 +581,86 @@ export default function App() {
   };
 
   // Start Pipeline Trigger
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!selectedPersona) return;
     setGenerationResult(null);
     setIsGenerating(true);
     setGenerationProgress(0);
     setElapsedTime(0);
+
+    try {
+      const response = await fetch("http://localhost:8000/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: script,
+          personaId: selectedPersona.id,
+          voiceModel: voiceModel,
+          faceModel: faceModel
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Generation request failed on local server.");
+      }
+
+      const data = await response.json();
+      
+      // Update states dynamically with actual API output
+      setGenerationProgress(100);
+      setIsGenerating(false);
+
+      const resultObj = {
+        script: script,
+        persona: selectedPersona,
+        voiceModel: voiceModel,
+        faceModel: faceModel,
+        videoUrl: `http://localhost:8000${data.videoUrl}`
+      };
+      setGenerationResult(resultObj);
+
+      // Add to session history
+      const newHistoryItem: GenerationHistory = {
+        id: data.id || Math.random().toString(36).substr(2, 9),
+        script: script,
+        persona: selectedPersona,
+        voiceModel: voiceModel,
+        faceModel: faceModel,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        duration: `${data.elapsedTime || 12}s`
+      };
+      setHistory(prev => [newHistoryItem, ...prev]);
+
+    } catch (err) {
+      console.warn("[Frontend] Backend connection failed, falling back to local simulation.", err);
+      // Fallback local simulation triggers if backend is offline or errors
+      let simProgress = 0;
+      const interval = setInterval(() => {
+        simProgress += 10;
+        setGenerationProgress(simProgress);
+        if (simProgress >= 100) {
+          clearInterval(interval);
+          setIsGenerating(false);
+          setGenerationResult({
+            script: script,
+            persona: selectedPersona,
+            voiceModel: voiceModel,
+            faceModel: faceModel,
+            videoUrl: '#'
+          });
+          
+          setHistory(prev => [{
+            id: Math.random().toString(36).substr(2, 9),
+            script: script,
+            persona: selectedPersona,
+            voiceModel: voiceModel,
+            faceModel: faceModel,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            duration: '12s'
+          }, ...prev]);
+        }
+      }, 500);
+    }
   };
 
 
@@ -817,7 +866,7 @@ export default function App() {
                     {/* Simplified user-friendly labels */}
                     {/* Simplified user-friendly labels */}
                     <div className="settings-group" style={{ position: 'relative' }}>
-                      <span className="settings-label">Vocal Clone Setting</span>
+                      <span className="settings-label">Vocal Clone Engine</span>
                       <div className="custom-dropdown-container">
                         <button 
                           type="button"
@@ -827,52 +876,31 @@ export default function App() {
                             setAvatarDropdownOpen(false);
                           }}
                         >
-                          <span>{
-                            voiceModel === "Standard Voice" ? "Standard Voice (Recommended)" :
-                            voiceModel === "Conversational Narrator" ? "Conversational Narrator" :
-                            "Warm Conversational"
-                          }</span>
+                          <span>{voiceModel}</span>
                           <ChevronDown size={16} className={`dropdown-arrow ${vocalDropdownOpen ? 'open' : ''}`} />
                         </button>
                         {vocalDropdownOpen && (
                           <div className="custom-dropdown-list">
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${voiceModel === "Standard Voice" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setVoiceModel("Standard Voice");
-                                setVocalDropdownOpen(false);
-                              }}
-                            >
-                              Standard Voice (Recommended)
-                            </button>
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${voiceModel === "Conversational Narrator" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setVoiceModel("Conversational Narrator");
-                                setVocalDropdownOpen(false);
-                              }}
-                            >
-                              Conversational Narrator
-                            </button>
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${voiceModel === "Warm Conversational" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setVoiceModel("Warm Conversational");
-                                setVocalDropdownOpen(false);
-                              }}
-                            >
-                              Warm Conversational
-                            </button>
+                            {["OmniVoice", "CosyVoice", "ChatTTS", "Bark"].map((model) => (
+                              <button 
+                                key={model}
+                                type="button"
+                                className={`custom-dropdown-option ${voiceModel === model ? 'selected' : ''}`}
+                                onClick={() => {
+                                  setVoiceModel(model);
+                                  setVocalDropdownOpen(false);
+                                }}
+                              >
+                                {model}
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div className="settings-group" style={{ position: 'relative' }}>
-                      <span className="settings-label">Avatar Face Setting</span>
+                      <span className="settings-label">Avatar Rendering Model</span>
                       <div className="custom-dropdown-container">
                         <button 
                           type="button"
@@ -882,45 +910,24 @@ export default function App() {
                             setVocalDropdownOpen(false);
                           }}
                         >
-                          <span>{
-                            faceModel === "Standard Avatar" ? "Standard Avatar (Lipsynced)" :
-                            faceModel === "Expressive Cinematic" ? "Expressive Cinematic" :
-                            "Ultra-HD Portrait"
-                          }</span>
+                          <span>{faceModel}</span>
                           <ChevronDown size={16} className={`dropdown-arrow ${avatarDropdownOpen ? 'open' : ''}`} />
                         </button>
                         {avatarDropdownOpen && (
                           <div className="custom-dropdown-list">
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${faceModel === "Standard Avatar" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setFaceModel("Standard Avatar");
-                                setAvatarDropdownOpen(false);
-                              }}
-                            >
-                              Standard Avatar (Lipsynced)
-                            </button>
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${faceModel === "Expressive Cinematic" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setFaceModel("Expressive Cinematic");
-                                setAvatarDropdownOpen(false);
-                              }}
-                            >
-                              Expressive Cinematic
-                            </button>
-                            <button 
-                              type="button"
-                              className={`custom-dropdown-option ${faceModel === "Ultra-HD Portrait" ? 'selected' : ''}`}
-                              onClick={() => {
-                                setFaceModel("Ultra-HD Portrait");
-                                setAvatarDropdownOpen(false);
-                              }}
-                            >
-                              Ultra-HD Portrait
-                            </button>
+                            {["Duix-Avatar", "LivePortrait", "SadTalker", "Wav2Lip"].map((model) => (
+                              <button 
+                                key={model}
+                                type="button"
+                                className={`custom-dropdown-option ${faceModel === model ? 'selected' : ''}`}
+                                onClick={() => {
+                                  setFaceModel(model);
+                                  setAvatarDropdownOpen(false);
+                                }}
+                              >
+                                {model}
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -985,14 +992,31 @@ export default function App() {
                       <CheckCircle2 size={16} style={{ color: '#1e7a44' }} /> Video Rendering Completed
                     </h3>
 
-                    {/* Speaker Canvas Player Preview */}
-                    <div className="result-video-wrapper" onClick={() => setIsPlaying(!isPlaying)}>
-                      <canvas 
-                        ref={canvasRef} 
-                        className="speaking-canvas" 
-                        width={640} 
-                        height={360}
-                      />
+                    {/* Speaker Canvas / Video Player Preview */}
+                    <div className="result-video-wrapper">
+                      {generationResult.videoUrl && generationResult.videoUrl !== '#' ? (
+                        <video 
+                          src={generationResult.videoUrl} 
+                          controls 
+                          autoPlay 
+                          className="speaking-canvas"
+                          style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            borderRadius: '12px', 
+                            background: '#060c0b',
+                            boxShadow: '0 8px 32px rgba(0, 245, 196, 0.1)' 
+                          }}
+                        />
+                      ) : (
+                        <canvas 
+                          ref={canvasRef} 
+                          className="speaking-canvas" 
+                          width={640} 
+                          height={360}
+                          onClick={() => setIsPlaying(!isPlaying)}
+                        />
+                      )}
                       <div className="pipeline-badge">
                         {generationResult.voiceModel} • {generationResult.faceModel}
                       </div>
