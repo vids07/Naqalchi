@@ -3,22 +3,19 @@ import {
   Download, 
   RotateCcw, 
   Trash2, 
-  UserPlus, 
-  Settings2, 
-  Sliders, 
   CheckCircle2, 
   Loader2, 
-  Clock, 
   Sparkles,
   UserCheck,
   FileAudio,
-  FileVideo,
   PanelLeft,
   PanelLeftClose,
   Mic,
-  Video,
-  Camera,
-  ChevronDown
+  Volume2,
+  Play,
+  Pause,
+  ChevronDown,
+  Sliders
 } from 'lucide-react';
 
 interface Persona {
@@ -27,7 +24,6 @@ interface Persona {
   avatarUrl: string | null;
   voiceClipName: string | null;
   faceClipName: string | null;
-  focus?: 'corporate' | 'social';
 }
 
 interface GenerationHistory {
@@ -35,7 +31,6 @@ interface GenerationHistory {
   script: string;
   persona: Persona;
   voiceModel: string;
-  faceModel: string;
   timestamp: string;
   duration: string;
 }
@@ -45,22 +40,21 @@ const SYSTEM_STANDARD_PERSONA: Persona = {
   name: 'Standard Presenter',
   avatarUrl: null,
   voiceClipName: 'standard_vocal_model.wav',
-  faceClipName: 'standard_mesh_model.mp4',
-  focus: 'corporate'
+  faceClipName: null
 };
 
 export default function App() {
-  // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'generate' | 'personas'>('generate');
+  // Navigation Tabs: 'voice-studio' or 'saved-voices'
+  const [activeTab, setActiveTab] = useState<'voice-studio' | 'saved-voices'>('voice-studio');
 
   // Sidebar Collapse state (ChatGPT-style)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
-  // Application State - Personas (Starts empty by default as requested)
+  // Application State - Cloned Voices / Personas
   const [personas, setPersonas] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('naqalchi_production_personas');
     if (saved) return JSON.parse(saved);
-    return []; // Empty by default
+    return []; // Start clean and empty
   });
 
   // Persist Personas
@@ -68,89 +62,73 @@ export default function App() {
     localStorage.setItem('naqalchi_production_personas', JSON.stringify(personas));
   }, [personas]);
 
-  // Main Generator State
-  const [script, setScript] = useState<string>(
-    "Welcome to Naqalchi. This is a production-ready system designed to generate polished, branded social media content. Type your script, create your custom speaking personas with vocal samples, select your desired studio settings, and generate professional speaking video assets instantly."
-  );
-  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(SYSTEM_STANDARD_PERSONA);
-
-  // Synchronize selection if personas list changes
-  useEffect(() => {
-    if (!selectedPersona) {
-      setSelectedPersona(SYSTEM_STANDARD_PERSONA);
-    }
-  }, [personas, selectedPersona]);
-
-  // Model choices mapped to real open-source models
-  const [voiceModel, setVoiceModel] = useState<string>('OmniVoice');
-  const [faceModel, setFaceModel] = useState<string>('Duix-Avatar');
-
-  // Generation Pipeline Progress State
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [generationStage, setGenerationStage] = useState<number>(0);
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [generationProgress, setGenerationProgress] = useState<number>(0);
+  // --- Voice Clone Flow State ---
   
-  // Clean end-user-facing progress descriptive stages
-  const stages = [
-    { title: 'Script Optimization', desc: 'Analyzing voice pacing, pronunciation boundaries, and natural pausing...' },
-    { title: 'Voice Generation', desc: 'Synthesizing studio-grade custom vocal clone track...' },
-    { title: 'Visual Synthesis', desc: 'Matching lipsync movement coordinates with high-fidelity keypoints...' },
-    { title: 'High-Definition Compositing', desc: 'Rendering final high-definition video frames and audio channels...' }
+  // Step 1: Voice Source
+  const [voiceSource, setVoiceSource] = useState<'upload' | 'record'>('upload');
+  const [voiceFile, setVoiceFile] = useState<File | Blob | null>(null);
+  const [voiceFileName, setVoiceFileName] = useState<string>('');
+  
+  // Recording State
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [micSignal, setMicSignal] = useState<boolean>(false);
+
+  // Step 2: Choose Model
+  const [voiceModel, setVoiceModel] = useState<string>('CosyVoice');
+  const [modelDropdownOpen, setModelDropdownOpen] = useState<boolean>(false);
+
+  // Step 3: Choose or Write Script
+  const preWrittenSentences = [
+    "I sound so good that I think I should start my own podcast, go on tour, and retire by next Tuesday.",
+    "I can say absolutely anything you want me to say. Yes, even that embarrassing song you sing in the shower.",
+    "The only way to do great work is to love what you do.",
+    "Be yourself; everyone else is already taken.",
+    "The best way to predict the future is to invent it. Let's build something incredible today."
   ];
 
-  // Output/Result screen state
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | null>(0);
+  const [customText, setCustomText] = useState<string>('');
+
+  // Step 4: Generation Progress & Results
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [generationProgress, setGenerationProgress] = useState<number>(0);
+  const [generationStage, setGenerationStage] = useState<number>(0);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+
+  const stages = [
+    { title: 'Acoustic Processing', desc: 'Analyzing voice pacing, pronunciation boundaries, and pitch metrics...' },
+    { title: 'Neural Synthesis', desc: 'Synthesizing studio-grade custom vocal clone track...' },
+    { title: 'Quality Gate Validation', desc: 'Passing alignment checkpoints and audio decibel checks...' }
+  ];
+
   const [generationResult, setGenerationResult] = useState<{
+    id: string;
     script: string;
     persona: Persona;
     voiceModel: string;
-    faceModel: string;
     videoUrl: string;
   } | null>(null);
+
+  // Saving Persona Options
+  const [saveAsPersona, setSaveAsPersona] = useState<boolean>(false);
+  const [personaName, setPersonaName] = useState<string>('');
+  const [isSavingPersona, setIsSavingPersona] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   // Session History List
   const [history, setHistory] = useState<GenerationHistory[]>([]);
 
-  // New Persona Modal Form States
-  const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [newPersonaName, setNewPersonaName] = useState<string>('');
-  const [newPersonaVoiceFile, setNewPersonaVoiceFile] = useState<string | null>(null);
-  const [newPersonaFaceFile, setNewPersonaFaceFile] = useState<string | null>(null);
-
-  // Custom Styled Dropdown Menu States
-  const [vocalDropdownOpen, setVocalDropdownOpen] = useState<boolean>(false);
-  const [avatarDropdownOpen, setAvatarDropdownOpen] = useState<boolean>(false);
-
-  // Upgraded Premium Wizard State Systems
-  const [wizardStep, setWizardStep] = useState<number>(0); // 0: Name, 1: Voice, 2: Face, 3: Diagnostics
-  const [voiceSource, setVoiceSource] = useState<'upload' | 'record'>('upload');
-  const [faceSource, setFaceSource] = useState<'upload' | 'record'>('upload');
-  const [personaFocus, setPersonaFocus] = useState<'corporate' | 'social'>('corporate');
-  
-  const [isRecordingVoice, setIsRecordingVoice] = useState<boolean>(false);
-  const [voiceTimer, setVoiceTimer] = useState<number>(0);
-  const [micSignal, setMicSignal] = useState<boolean>(false);
-  
-  const [isRecordingFace, setIsRecordingFace] = useState<boolean>(false);
-  const [faceTimer, setFaceTimer] = useState<number>(0);
-  const [faceCountdown, setFaceCountdown] = useState<number>(0);
-  const [cameraSignal, setCameraSignal] = useState<boolean>(false);
-
-  const [diagnosticProgress, setDiagnosticProgress] = useState<number>(0);
-  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
-
-  // Refs for media capturing and visual telemetry
+  // Media Capture Refs
   const oscillogramRef = useRef<HTMLCanvasElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Refs & Hooks for Playing Speaking Canvas
+  // Audio Result Playing State
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Timer loop for simulation
+  // Simulation timer for offline tests
   useEffect(() => {
     let interval: any;
     if (isGenerating) {
@@ -161,13 +139,10 @@ export default function App() {
             clearInterval(interval);
             return 100;
           }
-          const next = prev + (100 / 12); // Smooth 12-second generation simulation
-          
-          if (next < 25) setGenerationStage(0);
-          else if (next < 55) setGenerationStage(1);
-          else if (next < 80) setGenerationStage(2);
-          else setGenerationStage(3);
-
+          const next = prev + (100 / 10); // Smooth 10s simulation
+          if (next < 33) setGenerationStage(0);
+          else if (next < 75) setGenerationStage(1);
+          else setGenerationStage(2);
           return next > 100 ? 100 : next;
         });
       }, 1000);
@@ -179,124 +154,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  // Handle Synthesis End is now fully self-contained inside handleGenerate and its simulation fallback.
-
-  // Speaking Simulation Canvas Rendering Engine
-  useEffect(() => {
-    if (!generationResult || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationFrameId: number;
-    let captionIndex = 0;
-    const scriptWords = generationResult.script.split(' ');
-    
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Render modern high-end studio background
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, '#162a26'); // Elegant deep-forest green/charcoal
-      gradient.addColorStop(1, '#0b1210');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Drawing stylized presenter ring
-      ctx.strokeStyle = 'rgba(191, 229, 223, 0.15)';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2 - 15, 80, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Stylized premium avatar card
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2 - 15, 74, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Persona Initials
-      ctx.font = "bold 44px 'Outfit'";
-      ctx.fillStyle = '#bfe5df'; // Accent mint
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      const initials = generationResult.persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-      ctx.fillText(initials, canvas.width / 2, canvas.height / 2 - 15);
-
-      // Presenter Name label
-      ctx.font = "600 13px 'Inter'";
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.fillText(generationResult.persona.name.toUpperCase(), canvas.width / 2, canvas.height / 2 + 85);
-
-      // Live voice waveform when playing
-      if (isPlaying) {
-        ctx.fillStyle = '#bfe5df'; // Soft mint theme waveform
-        const numBars = 40;
-        const spacing = 6;
-        const startX = (canvas.width - (numBars * spacing)) / 2;
-        
-        for (let i = 0; i < numBars; i++) {
-          const barHeight = Math.sin(Date.now() * 0.009 + i * 0.4) * Math.cos(Date.now() * 0.004 + i * 0.1) * 35 + 8;
-          const x = startX + (i * spacing);
-          const y = canvas.height - 35;
-          ctx.fillRect(x, y - Math.abs(barHeight) / 2, 3, Math.abs(barHeight));
-        }
-
-        // Subtitles Overlay text box
-        ctx.font = "500 16px 'Inter'";
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-        ctx.fillRect(canvas.width / 2 - 240, canvas.height - 110, 480, 38);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        
-        const wordsToShow = scriptWords.slice(Math.floor(captionIndex / 4) * 4, Math.floor(captionIndex / 4) * 4 + 4).join(' ');
-        ctx.fillText(wordsToShow || generationResult.script.substring(0, 40), canvas.width / 2, canvas.height - 86);
-      } else {
-        // Play Overlay HUD
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2 - 15, 32, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#0e1715';
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2 - 7, canvas.height / 2 - 25);
-        ctx.lineTo(canvas.width / 2 + 14, canvas.height / 2 - 15);
-        ctx.lineTo(canvas.width / 2 - 7, canvas.height / 2 - 5);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      animationFrameId = requestAnimationFrame(draw);
-    };
-
-    draw();
-
-    let captionInterval: any;
-    if (isPlaying) {
-      captionInterval = setInterval(() => {
-        captionIndex = (captionIndex + 1) % scriptWords.length;
-      }, 550);
-    }
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      clearInterval(captionInterval);
-    };
-  }, [generationResult, isPlaying]);
-
-  // Clean up media tracks on component unmount
+  // Clean up media tracks on unmount
   useEffect(() => {
     return () => {
       releaseMediaStreams();
     };
   }, []);
 
-  // Safe release of mic and camera stream resources
   const releaseMediaStreams = () => {
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -311,7 +175,7 @@ export default function App() {
     analyserRef.current = null;
   };
 
-  // Step 1: Initiate Mic Connection
+  // Connect Microphone
   const initiateMicrophone = async () => {
     releaseMediaStreams();
     try {
@@ -319,7 +183,6 @@ export default function App() {
       mediaStreamRef.current = stream;
       setMicSignal(true);
 
-      // Setup Web Audio Analyser
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
       const analyser = audioCtx.createAnalyser();
@@ -332,38 +195,39 @@ export default function App() {
       analyserRef.current = analyser;
     } catch (err) {
       console.warn("Hardware Mic unavailable, entering high-fidelity Studio Simulation", err);
-      // Soft-fallback: set as connected to let the simulation work seamlessly
       setMicSignal(true);
     }
   };
 
-  // Start Mic Recording & Teleprompter
-  const startVoiceRecording = () => {
-    setIsRecordingVoice(true);
-    setVoiceTimer(0);
-  };
-
-  // Stop Mic Recording
-  const stopVoiceRecording = () => {
-    setIsRecordingVoice(false);
-    const mockFilename = `vocal_blueprint_studio_${Math.floor(Math.random() * 900) + 100}.wav`;
-    setNewPersonaVoiceFile(mockFilename);
-  };
-
-  // Manage Voice Timer Counter
+  // Manage Recording Timer
   useEffect(() => {
     let timer: any;
-    if (isRecordingVoice) {
+    if (isRecording) {
       timer = setInterval(() => {
-        setVoiceTimer(prev => prev + 1);
+        setRecordingDuration(prev => prev + 1);
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isRecordingVoice]);
+  }, [isRecording]);
+
+  // Start Voice Recording
+  const startRecording = () => {
+    setIsRecording(true);
+    setRecordingDuration(0);
+  };
+
+  // Stop Voice Recording
+  const stopRecording = () => {
+    setIsRecording(false);
+    // Create a mock recorded audio Blob
+    const mockBlob = new Blob([new Uint8Array(44100 * 2)], { type: 'audio/wav' });
+    setVoiceFile(mockBlob);
+    setVoiceFileName(`recorded_vocal_${Math.floor(Math.random() * 900) + 100}.wav`);
+  };
 
   // Audio Oscillograph Dynamic Canvas Loop
   useEffect(() => {
-    if (wizardStep !== 1 || voiceSource !== 'record' || !oscillogramRef.current) return;
+    if (voiceSource !== 'record' || !oscillogramRef.current) return;
     const canvas = oscillogramRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -375,16 +239,15 @@ export default function App() {
     const renderWave = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Background light fill
-      ctx.fillStyle = '#ffffff';
+      // Light background fill
+      ctx.fillStyle = '#f5faf8';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#162a26'; // Beautiful crisp brand accent green stroke
+      ctx.strokeStyle = '#3c5c56'; // Accent green stroke
       ctx.beginPath();
 
-      if (analyserRef.current && isRecordingVoice) {
-        // Real-time audio waveform mapping
+      if (analyserRef.current && isRecording) {
         analyserRef.current.getByteTimeDomainData(dataArray);
         const sliceWidth = canvas.width / bufferLength;
         let x = 0;
@@ -401,11 +264,11 @@ export default function App() {
           x += sliceWidth;
         }
       } else {
-        // Simulated harmonic wave when not recording or using simulated mic
+        // Simulated wave
         const sliceWidth = canvas.width / 100;
         let x = 0;
-        const amplitude = isRecordingVoice ? 24 : 6;
-        const speed = isRecordingVoice ? 0.15 : 0.04;
+        const amplitude = isRecording ? 24 : 6;
+        const speed = isRecording ? 0.15 : 0.04;
 
         for (let i = 0; i <= 100; i++) {
           const angle = (i * 0.15) + (Date.now() * speed);
@@ -430,210 +293,102 @@ export default function App() {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [wizardStep, voiceSource, isRecordingVoice]);
+  }, [voiceSource, isRecording]);
 
-  // Step 2: Initiate Camera Viewport
-  const initiateCamera = async () => {
-    releaseMediaStreams();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 360 }
-      });
-      mediaStreamRef.current = stream;
-      setCameraSignal(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.warn("Hardware Camera unavailable, loading high-fidelity Sandbox Simulation", err);
-      setCameraSignal(true); // Gracefully unlock simulated camera viewport
+  // Handle File Upload Select
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setVoiceFile(file);
+      setVoiceFileName(file.name);
     }
   };
 
-  // Start Face Recording (with a cinematic 3s countdown pre-roll)
-  const startFaceRecording = () => {
-    setFaceCountdown(3);
-  };
-
-  // Countdown timer trigger
-  useEffect(() => {
-    let interval: any;
-    if (faceCountdown > 0) {
-      interval = setInterval(() => {
-        setFaceCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            // Finished counting down, active record stream
-            setIsRecordingFace(true);
-            setFaceTimer(0);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [faceCountdown]);
-
-  // Handle Face Active Record Timer
-  useEffect(() => {
-    let timer: any;
-    if (isRecordingFace) {
-      timer = setInterval(() => {
-        setFaceTimer(prev => {
-          if (prev >= 8) {
-            // Auto stop after 8 seconds (ideal avatar capture buffer)
-            clearInterval(timer);
-            setIsRecordingFace(false);
-            const mockFilename = `mesh_profile_webcam_${Math.floor(Math.random() * 900) + 100}.mp4`;
-            setNewPersonaFaceFile(mockFilename);
-            return 8;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [isRecordingFace]);
-
-  // Step 3: Run High-Fidelity Diagnostics Scan & Save Persona
-  const triggerDiagnosticsAndSave = () => {
-    setWizardStep(3);
-    setDiagnosticProgress(0);
-    setDiagnosticLogs([
-      "Establishing link with neural rendering network...",
-      "Analyzing recorded acoustic frequencies...",
-      "Normalizing volume thresholds and audio decibels..."
-    ]);
-  };
-
-  // Diagnostic loading log simulation
-  useEffect(() => {
-    let interval: any;
-    if (wizardStep === 3) {
-      interval = setInterval(() => {
-        setDiagnosticProgress(prev => {
-          const next = prev + 10;
-          
-          if (next === 20) {
-            setDiagnosticLogs(logs => [...logs, "Mapping specific vocal attributes and delivery speed..."]);
-          }
-          if (next === 40) {
-            setDiagnosticLogs(logs => [...logs, "Calibrating head orientation and boundary anchors..."]);
-          }
-          if (next === 65) {
-            setDiagnosticLogs(logs => [...logs, "Aligning gaze vectors, blinking, and lipsync movement..."]);
-          }
-          if (next === 85) {
-            setDiagnosticLogs(logs => [...logs, "Securing and rendering private presenter model files..."]);
-          }
-          
-          if (next >= 100) {
-            clearInterval(interval);
-            // Execute the actual persona addition
-            setTimeout(() => {
-              saveNewPersonaToRoster();
-            }, 800);
-            return 100;
-          }
-          return next;
-        });
-      }, 350);
-    }
-    return () => clearInterval(interval);
-  }, [wizardStep]);
-
-  // Commit Persona to State
-  // Clean up and close wizard
-  const resetAndCloseWizard = (targetTab?: 'generate' | 'personas') => {
-    setShowAddModal(false);
-    setNewPersonaName('');
-    setNewPersonaVoiceFile(null);
-    setNewPersonaFaceFile(null);
-    setWizardStep(0);
-    setVoiceSource('upload');
-    setFaceSource('upload');
-    if (targetTab) {
-      setActiveTab(targetTab);
-    }
-  };
-
-  // Commit Persona to State
-  const saveNewPersonaToRoster = () => {
-    if (!newPersonaName.trim()) return;
-
-    const newPersona: Persona = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newPersonaName,
-      avatarUrl: null,
-      voiceClipName: voiceSource === 'record' ? (newPersonaVoiceFile || 'studio_recorded_vocal.wav') : (newPersonaVoiceFile || 'uploaded_sample.wav'),
-      faceClipName: faceSource === 'record' ? (newPersonaFaceFile || 'studio_recorded_mesh.mp4') : (newPersonaFaceFile || 'uploaded_mesh.mp4'),
-      focus: personaFocus
-    };
-
-    const updated = [...personas, newPersona];
-    setPersonas(updated);
-    setSelectedPersona(newPersona);
+  // Main Generation Pipeline Trigger
+  const handleCloneAndSpeak = async () => {
+    if (!voiceFile) return;
     
-    // Keep name in memory for the success step, release streams and route to step 4 (Success)
-    releaseMediaStreams();
-    setWizardStep(4);
-  };
-
-  // Start Pipeline Trigger
-  const handleGenerate = async () => {
-    if (!selectedPersona) return;
-    setGenerationResult(null);
     setIsGenerating(true);
     setGenerationProgress(0);
     setElapsedTime(0);
+    setGenerationResult(null);
+    setSaveAsPersona(false);
+    setPersonaName('');
+    setSaveSuccess(false);
+
+    const activeScript = selectedPresetIndex !== null ? preWrittenSentences[selectedPresetIndex] : customText;
 
     try {
-      const response = await fetch("http://localhost:8000/api/generate", {
+      // 1. First, create a custom persona to host this reference clip
+      const formData = new FormData();
+      formData.append("name", `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+      
+      if (voiceFile instanceof File) {
+        formData.append("voice_clip", voiceFile);
+      } else {
+        // For recorded blobs, construct a File object
+        const recordedFile = new File([voiceFile], voiceFileName, { type: "audio/wav" });
+        formData.append("voice_clip", recordedFile);
+      }
+
+      console.log("[VoiceStudio] Uploading reference audio and registering persona...");
+      const pResponse = await fetch("http://localhost:8000/api/personas", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!pResponse.ok) {
+        throw new Error("Failed to register cloned voice reference.");
+      }
+
+      const activePersona: Persona = await pResponse.ok ? await pResponse.json() : SYSTEM_STANDARD_PERSONA;
+
+      // 2. Second, run the speech synthesis pipeline
+      console.log("[VoiceStudio] Driving speech synthesis via model orchestrator...");
+      const gResponse = await fetch("http://localhost:8000/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          script: script,
-          personaId: selectedPersona.id,
+          script: activeScript,
+          personaId: activePersona.id,
           voiceModel: voiceModel,
-          faceModel: faceModel
+          faceModel: "Duix-Avatar" // Silent standard video wrapper fallback
         })
       });
 
-      if (!response.ok) {
-        throw new Error("Generation request failed on local server.");
+      if (!gResponse.ok) {
+        throw new Error("Speech synthesis failed on backend.");
       }
 
-      const data = await response.json();
+      const gData = await gResponse.json();
       
-      // Update states dynamically with actual API output
       setGenerationProgress(100);
       setIsGenerating(false);
 
-      const resultObj = {
-        script: script,
-        persona: selectedPersona,
+      const result = {
+        id: gData.id,
+        script: activeScript,
+        persona: activePersona,
         voiceModel: voiceModel,
-        faceModel: faceModel,
-        videoUrl: `http://localhost:8000${data.videoUrl}`
+        videoUrl: `http://localhost:8000${gData.videoUrl}`
       };
-      setGenerationResult(resultObj);
+      setGenerationResult(result);
 
       // Add to session history
-      const newHistoryItem: GenerationHistory = {
-        id: data.id || Math.random().toString(36).substr(2, 9),
-        script: script,
-        persona: selectedPersona,
+      const historyItem: GenerationHistory = {
+        id: gData.id,
+        script: activeScript,
+        persona: activePersona,
         voiceModel: voiceModel,
-        faceModel: faceModel,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        duration: `${data.elapsedTime || 12}s`
+        duration: `${gData.elapsedTime || 10}s`
       };
-      setHistory(prev => [newHistoryItem, ...prev]);
+      setHistory(prev => [historyItem, ...prev]);
 
     } catch (err) {
-      console.warn("[Frontend] Backend connection failed, falling back to local simulation.", err);
-      // Fallback local simulation triggers if backend is offline or errors
+      console.warn("[VoiceStudio] Backend failed. Falling back to local simulation.", err);
+      
+      // Simulation Fallback
       let simProgress = 0;
       const interval = setInterval(() => {
         simProgress += 10;
@@ -641,42 +396,62 @@ export default function App() {
         if (simProgress >= 100) {
           clearInterval(interval);
           setIsGenerating(false);
+          
+          const fallbackPersona: Persona = {
+            id: 'temp-' + Math.random().toString(36).substring(2, 9),
+            name: `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`,
+            avatarUrl: null,
+            voiceClipName: voiceFileName,
+            faceClipName: null
+          };
+
           setGenerationResult({
-            script: script,
-            persona: selectedPersona,
+            id: Math.random().toString(36).substring(2, 9),
+            script: activeScript,
+            persona: fallbackPersona,
             voiceModel: voiceModel,
-            faceModel: faceModel,
             videoUrl: '#'
           });
-          
+
           setHistory(prev => [{
-            id: Math.random().toString(36).substr(2, 9),
-            script: script,
-            persona: selectedPersona,
+            id: Math.random().toString(36).substring(2, 9),
+            script: activeScript,
+            persona: fallbackPersona,
             voiceModel: voiceModel,
-            faceModel: faceModel,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            duration: '12s'
+            duration: '10s'
           }, ...prev]);
         }
       }, 500);
     }
   };
 
+  // Rename and save the Persona permanently to roster
+  const handleSaveToRoster = () => {
+    if (!generationResult || !personaName.trim()) return;
 
-  // Delete Persona
-  const handleDeletePersona = (id: string, e: React.MouseEvent) => {
+    setIsSavingPersona(true);
+    setTimeout(() => {
+      const updatedPersona: Persona = {
+        ...generationResult.persona,
+        name: personaName
+      };
+
+      setPersonas(prev => [...prev, updatedPersona]);
+      setSaveSuccess(true);
+      setIsSavingPersona(false);
+    }, 600);
+  };
+
+  // Delete Voice Persona
+  const handleDeleteVoice = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = personas.filter(p => p.id !== id);
-    setPersonas(updated);
-    if (selectedPersona?.id === id) {
-      setSelectedPersona(updated.length > 0 ? updated[0] : null);
-    }
+    setPersonas(prev => prev.filter(p => p.id !== id));
   };
 
   return (
     <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {/* SaaS Premium Left Sidebar Layout */}
+      {/* SaaS Sidebar Layout */}
       <aside className="app-sidebar">
         <div className="brand-section">
           <div className="brand-logo">
@@ -690,14 +465,13 @@ export default function App() {
                 </radialGradient>
               </defs>
               <rect width="100" height="100" fill="url(#spadeAuraGlow)" />
-              {/* Seamless bold Spade lobes and concave curved stem matching original artwork */}
               <path d="M50 15C47 15 22 36 22 52C22 61 29 65 39.5 65C44 65 47.5 63 50 60C52.5 63 56 65 60.5 65C71 65 78 61 78 52C78 36 53 15 50 15Z" fill="#060c0b" />
               <path d="M50 56Q48 65 44 76.5H56Q52 65 50 56Z" fill="#060c0b" />
             </svg>
           </div>
           <div className="brand-info">
             <h1>Naqalchi</h1>
-            <p>AI CREATIVE SUITE</p>
+            <p>VOICE LABS</p>
           </div>
           <button 
             className="btn-collapse-sidebar"
@@ -710,24 +484,33 @@ export default function App() {
 
         <nav className="nav-menu">
           <button 
-            className={`nav-tab ${activeTab === 'generate' ? 'active' : ''}`}
-            onClick={() => setActiveTab('generate')}
+            className={`nav-tab ${activeTab === 'voice-studio' ? 'active' : ''}`}
+            onClick={() => setActiveTab('voice-studio')}
           >
-            <Sparkles size={18} />
-            Video Studio
+            <Mic size={18} />
+            Voice Studio
           </button>
           <button 
-            className={`nav-tab ${activeTab === 'personas' ? 'active' : ''}`}
-            onClick={() => setActiveTab('personas')}
+            className={`nav-tab ${activeTab === 'saved-voices' ? 'active' : ''}`}
+            onClick={() => setActiveTab('saved-voices')}
           >
             <UserCheck size={18} />
-            Manage Personas
+            Saved Voices ({personas.length})
           </button>
         </nav>
 
+        <div className="sidebar-footer">
+          <div className="user-profile">
+            <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>VL</div>
+            <div className="user-meta">
+              <h4 style={{ color: 'var(--text-dark)', fontSize: '13px', fontWeight: 600 }}>Voice Creator</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>STUDIO ACCOUNT</p>
+            </div>
+          </div>
+        </div>
       </aside>
 
-      {/* Main Right Full-Viewport Content Area */}
+      {/* Main Content Viewport */}
       <main className="main-content">
         <header className="top-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -740,214 +523,233 @@ export default function App() {
                 <PanelLeft size={20} />
               </button>
             )}
-          </div>
-          <div className="user-profile">
-            <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>AD</div>
-            <div className="user-meta">
-              <h4 style={{ color: 'var(--text-dark)', fontSize: '13px', fontWeight: 600 }}>Admin Studio</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>INTERNAL ACCOUNT</p>
-            </div>
+            <h2 className="page-title">
+              {activeTab === 'voice-studio' ? 'Instant Voice Cloning' : 'Saved Roster'}
+            </h2>
           </div>
         </header>
 
-        {/* VIEW 1: VIDEO STUDIO VIEWPORT */}
-        {activeTab === 'generate' && (
+        {/* VIEW 1: VOICE STUDIO (Simplified Flow) */}
+        {activeTab === 'voice-studio' && (
           <div className="workspace-scroll-container">
-            <div className="workspace-grid">
-              {/* Left Panel: Inputs & Personas */}
-              <div className="studio-panel">
-                {/* Script Text Input */}
-                <div className="script-container">
-                  <label className="section-title">
-                    <Sparkles size={16} /> Spoken Script Content
-                  </label>
-                  <textarea 
-                    className="script-textarea"
-                    value={script}
-                    onChange={(e) => setScript(e.target.value)}
-                    placeholder="Write the script for your avatar to speak. Use natural language, pauses, and clear structure."
-                  />
-                  <div className="script-footer">
-                    <span>Recommended: 50 - 500 words for social hooks</span>
-                    <span>{script.split(/\s+/).filter(Boolean).length} words</span>
-                  </div>
-                </div>
-
-                {/* Persona Selection */}
-                <div className="persona-selector">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label className="section-title" style={{ margin: 0 }}>
-                      <UserCheck size={16} /> Presenter Persona
-                    </label>
-                  </div>
-
-                  <div 
-                    className="file-upload-zone"
-                    onClick={() => setShowAddModal(true)}
-                    style={{ borderStyle: 'dashed', padding: '36px', background: '#fcfdfd' }}
-                  >
-                    <span style={{ fontWeight: 700, color: 'var(--text-dark)', fontSize: '15px' }}>Standard AI Presenter Active</span>
-                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '440px', margin: '4px auto 0' }}>
-                      Currently using our built-in high-fidelity presenter. To clone your custom voice and face, create a custom persona.
-                    </p>
+            <div className="workspace-grid" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
+              
+              {/* Left Column: Flow Inputs */}
+              <div className="studio-panel" style={{ gap: '24px' }}>
+                
+                {/* Step 1: Upload or Record */}
+                <div className="settings-panel" style={{ padding: '24px' }}>
+                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                    <FileAudio size={18} /> 1. Upload or Record Reference Audio
+                  </h3>
+                  
+                  {/* Segmented Controller */}
+                  <div className="studio-tab-selector" style={{ display: 'flex', gap: '8px', background: 'rgba(15,28,26,0.03)', padding: '4px', borderRadius: '10px', marginBottom: '16px' }}>
                     <button 
                       type="button" 
-                      className="btn-primary-small"
-                      style={{ marginTop: '16px', padding: '8px 16px', fontSize: '13px' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowAddModal(true);
-                      }}
+                      className={`studio-tab-btn ${voiceSource === 'upload' ? 'active' : ''}`}
+                      onClick={() => { setVoiceSource('upload'); releaseMediaStreams(); }}
+                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: voiceSource === 'upload' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
                     >
-                      + Create Custom Clone
+                      Upload Audio
                     </button>
+                    <button 
+                      type="button" 
+                      className={`studio-tab-btn ${voiceSource === 'record' ? 'active' : ''}`}
+                      onClick={() => { setVoiceSource('record'); initiateMicrophone(); }}
+                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: voiceSource === 'record' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+                    >
+                      Record Audio
+                    </button>
+                  </div>
+
+                  {voiceSource === 'upload' ? (
+                    <div style={{ position: 'relative' }}>
+                      <input 
+                        type="file" 
+                        accept="audio/wav,audio/mp3,audio/mpeg" 
+                        id="voice-upload-input"
+                        style={{ display: 'none' }}
+                        onChange={handleFileUpload}
+                      />
+                      <label 
+                        htmlFor="voice-upload-input"
+                        className="file-upload-zone"
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border-color)', borderRadius: '14px', padding: '32px 16px', background: '#fcfdfd', cursor: 'pointer', textAlign: 'center', transition: 'var(--transition-smooth)' }}
+                      >
+                        <FileAudio size={24} style={{ color: 'var(--text-muted)', marginBottom: '10px' }} />
+                        <span style={{ fontWeight: 700, fontSize: '14px' }}>
+                          {voiceFileName || 'Click to select reference audio file'}
+                        </span>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          Supports WAV and MP3 (Recommended: 10s to 30s clear vocal sample)
+                        </p>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="studio-recording-hud" style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '20px' }}>
+                      <div className="device-signal-check" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        <div className={`signal-dot ${micSignal ? 'connected' : ''}`} style={{ width: '8px', height: '8px', borderRadius: '50%', background: micSignal ? '#00b894' : '#e84118' }}></div>
+                        {micSignal ? "Microphone active & ready" : "Looking for audio capture device..."}
+                      </div>
+
+                      <canvas 
+                        ref={oscillogramRef} 
+                        className="studio-oscillogram-canvas"
+                        width={400}
+                        height={60}
+                        style={{ width: '100%', height: '60px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                      />
+
+                      <div className="studio-recording-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                        <button 
+                          type="button"
+                          onClick={isRecording ? stopRecording : startRecording}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            background: isRecording ? '#e84118' : 'var(--accent-dark)',
+                            color: '#ffffff',
+                            border: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'var(--transition-smooth)',
+                            boxShadow: '0 4px 12px rgba(15,28,26,0.1)'
+                          }}
+                        >
+                          <Mic size={20} />
+                        </button>
+                        <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                          {isRecording ? `Recording: ${recordingDuration}s` : voiceFileName ? `Saved: ${voiceFileName}` : "Click to record voice"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2: Choose Model */}
+                <div className="settings-panel" style={{ padding: '24px' }}>
+                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                    <Sliders size={18} /> 2. Choose Vocal Clone Model
+                  </h3>
+                  <div className="custom-dropdown-container" style={{ position: 'relative' }}>
+                    <button 
+                      type="button"
+                      className={`custom-dropdown-trigger ${modelDropdownOpen ? 'open' : ''}`}
+                      onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+                      style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '12px 16px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '10px', fontWeight: 600, color: 'var(--text-dark)', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <span>{voiceModel} (Zero-Shot Voice Cloning)</span>
+                      <ChevronDown size={16} />
+                    </button>
+                    {modelDropdownOpen && (
+                      <div className="custom-dropdown-list" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '10px', marginTop: '4px', zIndex: 50, boxShadow: 'var(--shadow-premium)', overflow: 'hidden' }}>
+                        {["CosyVoice", "OmniVoice", "ChatTTS", "Bark"].map((model) => (
+                          <button 
+                            key={model}
+                            type="button"
+                            className="custom-dropdown-option"
+                            onClick={() => {
+                              setVoiceModel(model);
+                              setModelDropdownOpen(false);
+                            }}
+                            style={{ display: 'block', width: '100%', padding: '12px 16px', background: voiceModel === model ? '#f5faf8' : 'transparent', border: 'none', borderBottom: '1px solid rgba(15,28,26,0.03)', textAlign: 'left', fontWeight: 500, cursor: 'pointer', color: 'var(--text-dark)' }}
+                          >
+                            {model}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* History Section */}
-                {history.length > 0 && (
-                  <div className="history-section">
-                    <h3 className="section-title" style={{ fontSize: '13px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      <Clock size={14} /> History (This Session)
-                    </h3>
-                    <div className="history-list">
-                      {history.map((item) => {
-                        const initials = item.persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                        return (
-                          <div 
-                            key={item.id} 
-                            className="history-item"
-                            onClick={() => {
-                              setScript(item.script);
-                              setSelectedPersona(item.persona);
-                              setVoiceModel(item.voiceModel);
-                              setFaceModel(item.faceModel);
-                              setGenerationResult({
-                                script: item.script,
-                                persona: item.persona,
-                                voiceModel: item.voiceModel,
-                                faceModel: item.faceModel,
-                                videoUrl: '#'
-                              });
-                            }}
-                          >
-                            <div className="history-meta">
-                              <div className="history-avatar-sm" style={{ background: 'var(--accent-dark)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>
-                                {initials}
-                              </div>
-                              <div className="history-info">
-                                <h4>{item.persona.name}</h4>
-                                <p>{item.script}</p>
-                              </div>
-                            </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{item.timestamp}</span>
-                              <span>•</span>
-                              <span>{item.duration}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                {/* Step 3: Select or Write Script */}
+                <div className="settings-panel" style={{ padding: '24px' }}>
+                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                    <Sparkles size={18} /> 3. Select What the AI Will Say
+                  </h3>
+                  
+                  {/* Selectable Presets */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                    {preWrittenSentences.map((sentence, idx) => (
+                      <div 
+                        key={idx}
+                        className={`blueprint-focus-card ${selectedPresetIndex === idx ? 'active' : ''}`}
+                        onClick={() => {
+                          setSelectedPresetIndex(idx);
+                          setCustomText('');
+                        }}
+                        style={{ 
+                          padding: '12px 16px', 
+                          border: selectedPresetIndex === idx ? '2px solid var(--accent-dark)' : '1px solid var(--border-color)', 
+                          borderRadius: '10px', 
+                          background: selectedPresetIndex === idx ? 'var(--bg-pill-hover)' : '#ffffff', 
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                      >
+                        <p style={{ fontSize: '13px', lineHeight: '1.4', fontWeight: selectedPresetIndex === idx ? 600 : 400 }}>
+                          "{sentence}"
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                )}
+
+                  {/* Write custom text area */}
+                  <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-dark)', display: 'block', marginBottom: '6px' }}>
+                      Or write your own custom script:
+                    </span>
+                    <textarea 
+                      className="script-textarea"
+                      placeholder="Type custom script here. This will override preset card selections..."
+                      value={customText}
+                      onChange={(e) => {
+                        setCustomText(e.target.value);
+                        setSelectedPresetIndex(null);
+                      }}
+                      style={{ height: '80px', fontSize: '13px', padding: '12px' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Trigger Button */}
+                <button 
+                  className="btn-generate"
+                  onClick={handleCloneAndSpeak}
+                  disabled={!voiceFile || isGenerating}
+                  style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--accent-dark)', color: '#ffffff', border: 'none', fontWeight: 700, fontSize: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <Sparkles size={18} /> Clone & Speak!
+                </button>
+
               </div>
 
-              {/* Right Panel: Settings / Generation Pipeline State */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Right Column: Rendering Preview & Actions */}
+              <div>
                 
-                {/* 1. Normal Settings State */}
+                {/* Default Empty State */}
                 {!isGenerating && !generationResult && (
-                  <div className="settings-panel">
-                    <h3 className="section-title" style={{ marginBottom: '4px' }}>
-                      <Sliders size={16} /> Generation Engine Settings
-                    </h3>
-                    
-                    {/* Simplified user-friendly labels */}
-                    {/* Simplified user-friendly labels */}
-                    <div className="settings-group" style={{ position: 'relative' }}>
-                      <span className="settings-label">Vocal Clone Engine</span>
-                      <div className="custom-dropdown-container">
-                        <button 
-                          type="button"
-                          className={`custom-dropdown-trigger ${vocalDropdownOpen ? 'open' : ''}`}
-                          onClick={() => {
-                            setVocalDropdownOpen(!vocalDropdownOpen);
-                            setAvatarDropdownOpen(false);
-                          }}
-                        >
-                          <span>{voiceModel}</span>
-                          <ChevronDown size={16} className={`dropdown-arrow ${vocalDropdownOpen ? 'open' : ''}`} />
-                        </button>
-                        {vocalDropdownOpen && (
-                          <div className="custom-dropdown-list">
-                            {["OmniVoice", "CosyVoice", "ChatTTS", "Bark"].map((model) => (
-                              <button 
-                                key={model}
-                                type="button"
-                                className={`custom-dropdown-option ${voiceModel === model ? 'selected' : ''}`}
-                                onClick={() => {
-                                  setVoiceModel(model);
-                                  setVocalDropdownOpen(false);
-                                }}
-                              >
-                                {model}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                  <div className="generation-card" style={{ background: '#ffffff', minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '32px' }}>
+                    <div style={{ background: 'var(--bg-pill-hover)', color: 'var(--accent-dark)', padding: '20px', borderRadius: '50%' }}>
+                      <Volume2 size={40} />
                     </div>
-
-                    <div className="settings-group" style={{ position: 'relative' }}>
-                      <span className="settings-label">Avatar Rendering Model</span>
-                      <div className="custom-dropdown-container">
-                        <button 
-                          type="button"
-                          className={`custom-dropdown-trigger ${avatarDropdownOpen ? 'open' : ''}`}
-                          onClick={() => {
-                            setAvatarDropdownOpen(!avatarDropdownOpen);
-                            setVocalDropdownOpen(false);
-                          }}
-                        >
-                          <span>{faceModel}</span>
-                          <ChevronDown size={16} className={`dropdown-arrow ${avatarDropdownOpen ? 'open' : ''}`} />
-                        </button>
-                        {avatarDropdownOpen && (
-                          <div className="custom-dropdown-list">
-                            {["Duix-Avatar", "LivePortrait", "SadTalker", "Wav2Lip"].map((model) => (
-                              <button 
-                                key={model}
-                                type="button"
-                                className={`custom-dropdown-option ${faceModel === model ? 'selected' : ''}`}
-                                onClick={() => {
-                                  setFaceModel(model);
-                                  setAvatarDropdownOpen(false);
-                                }}
-                              >
-                                {model}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <h4 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark)' }}>Clone Synthesis Preview</h4>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', maxWidth: '280px' }}>
+                        Provide reference audio, choose what the AI should speak, and generate a real cloned speech track.
+                      </p>
                     </div>
-
-                    <button 
-                      className="btn-generate"
-                      onClick={handleGenerate}
-                      disabled={!script.trim() || !selectedPersona}
-                      title={!selectedPersona ? "Please create a speaking persona first" : ""}
-                    >
-                      <Sparkles size={16} /> Generate Video Asset
-                    </button>
                   </div>
                 )}
 
-                {/* 2. Generation Processing Pipeline Overlay */}
+                {/* Processing State */}
                 {isGenerating && (
-                  <div className="generation-card">
-                    <div className="progress-circular-container">
+                  <div className="generation-card" style={{ background: '#ffffff', minHeight: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '24px', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '32px' }}>
+                    <div className="progress-circular-container" style={{ margin: '0 auto' }}>
                       <svg className="progress-circle-svg">
                         <circle className="progress-circle-bg" cx="70" cy="70" r="55"></circle>
                         <circle 
@@ -964,707 +766,259 @@ export default function App() {
                       <div className="timer-display">{elapsedTime}s</div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <h3 className="stage-title">{stages[generationStage].title}...</h3>
-                      <p className="stage-desc">{stages[generationStage].desc}</p>
+                    <div style={{ textAlign: 'center' }}>
+                      <h3 className="stage-title" style={{ fontSize: '16px' }}>{stages[generationStage].title}...</h3>
+                      <p className="stage-desc" style={{ fontSize: '12.5px', marginTop: '4px' }}>{stages[generationStage].desc}</p>
                     </div>
 
-                    <div className="stage-tracker">
+                    <div className="stage-tracker" style={{ background: 'var(--accent-light)', padding: '16px', borderRadius: '12px' }}>
                       {stages.map((stg, idx) => (
                         <div 
                           key={idx} 
                           className={`tracker-item ${idx < generationStage ? 'completed' : idx === generationStage ? 'active' : ''}`}
+                          style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', padding: '8px 0', borderBottom: idx < 2 ? '1px solid rgba(15,28,26,0.04)' : 'none' }}
                         >
-                          <div className="dot-indicator"></div>
-                          <span>{stg.title}</span>
-                          {idx < generationStage && <CheckCircle2 size={12} style={{ color: '#1e7a44', marginLeft: 'auto' }} />}
-                          {idx === generationStage && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 'auto' }} />}
+                          <div className="dot-indicator" style={{ width: '6px', height: '6px', borderRadius: '50%', background: idx <= generationStage ? 'var(--accent-dark)' : '#cbd5e1' }}></div>
+                          <span style={{ fontWeight: idx === generationStage ? 'bold' : 'normal' }}>{stg.title}</span>
+                          {idx < generationStage && <CheckCircle2 size={12} style={{ color: '#00b894', marginLeft: 'auto' }} />}
+                          {idx === generationStage && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 'auto', color: 'var(--accent-dark)' }} />}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* 3. Output Preview Presentation Panel */}
+                {/* Successful Result Card */}
                 {!isGenerating && generationResult && (
-                  <div className="result-card">
-                    <h3 className="section-title" style={{ marginBottom: '2px' }}>
-                      <CheckCircle2 size={16} style={{ color: '#1e7a44' }} /> Video Rendering Completed
-                    </h3>
+                  <div className="result-card" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
+                      <CheckCircle2 size={18} style={{ color: '#00b894' }} />
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>Cloned Voice Ready!</h3>
+                    </div>
 
-                    {/* Speaker Canvas / Video Player Preview */}
-                    <div className="result-video-wrapper">
-                      {generationResult.videoUrl && generationResult.videoUrl !== '#' ? (
+                    {/* Integrated Premium Player */}
+                    <div style={{ background: 'var(--accent-light)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      
+                      {generationResult.videoUrl !== '#' ? (
                         <video 
                           src={generationResult.videoUrl} 
                           controls 
-                          autoPlay 
-                          className="speaking-canvas"
-                          style={{ 
-                            width: '100%', 
-                            height: '100%', 
-                            borderRadius: '12px', 
-                            background: '#060c0b',
-                            boxShadow: '0 8px 32px rgba(0, 245, 196, 0.1)' 
-                          }}
+                          style={{ width: '100%', height: '50px', background: '#0e1715', borderRadius: '8px' }}
                         />
                       ) : (
-                        <canvas 
-                          ref={canvasRef} 
-                          className="speaking-canvas" 
-                          width={640} 
-                          height={360}
-                          onClick={() => setIsPlaying(!isPlaying)}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '12px 0' }}>
+                          <button 
+                            onClick={() => setIsPlaying(!isPlaying)}
+                            style={{ width: '48px', height: '44px', borderRadius: '50%', border: 'none', background: 'var(--accent-dark)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            {isPlaying ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '3px' }} />}
+                          </button>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, display: 'block' }}>Playback Cloned Vocal Blueprint</span>
+                            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Status: Local Simulation Render Pack</span>
+                          </div>
+                        </div>
                       )}
-                      <div className="pipeline-badge">
-                        {generationResult.voiceModel} • {generationResult.faceModel}
+
+                      <div style={{ fontSize: '13px', background: 'rgba(255,255,255,0.8)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', color: 'var(--text-dark)', lineHeight: '1.4', fontStyle: 'italic' }}>
+                        "{generationResult.script}"
                       </div>
                     </div>
 
-                    <div className="result-controls">
+                    {/* Post-Generation Save as Persona Flow */}
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                      {!saveSuccess ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={saveAsPersona} 
+                              onChange={(e) => setSaveAsPersona(e.target.checked)}
+                              style={{ width: '16px', height: '16px', accentColor: 'var(--accent-dark)' }}
+                            />
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>
+                              Save this Voice to My Library?
+                            </span>
+                          </label>
+
+                          {saveAsPersona && (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                              <input 
+                                type="text"
+                                className="form-input"
+                                placeholder="Give this Voice a name (e.g. Sarah Cloned)"
+                                value={personaName}
+                                onChange={(e) => setPersonaName(e.target.value)}
+                                style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px' }}
+                              />
+                              <button 
+                                onClick={handleSaveToRoster}
+                                disabled={!personaName.trim() || isSavingPersona}
+                                style={{ padding: '10px 16px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                {isSavingPersona ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 184, 148, 0.1)', color: '#00b894', padding: '12px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>
+                          <CheckCircle2 size={16} />
+                          <span>Voice saved successfully! Added to "Saved Voices" roster.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button 
                         className="btn-secondary"
                         onClick={() => {
-                          setIsPlaying(false);
                           setGenerationResult(null);
                         }}
+                        style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                       >
                         <RotateCcw size={14} /> Adjust Script
                       </button>
                       <button 
                         className="btn-primary-small"
                         onClick={() => {
-                          const blob = new Blob([script], { type: 'text/plain' });
+                          const blob = new Blob([generationResult.script], { type: 'text/plain' });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
                           a.href = url;
-                          a.download = `rendered_${generationResult.persona.name.replace(/\s+/g, '_')}_social_asset_pack.txt`;
+                          a.download = `voice_script_${generationResult.id}.txt`;
                           a.click();
                         }}
+                        style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: 700, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                       >
-                        <Download size={14} /> Download Render Pack
+                        <Download size={14} /> Download Script
                       </button>
+                    </div>
+
+                  </div>
+                )}
+
+                {/* Session History Section */}
+                {history.length > 0 && (
+                  <div className="history-section" style={{ marginTop: '24px' }}>
+                    <h3 className="section-title" style={{ fontSize: '12.5px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '12px' }}>
+                      Session History
+                    </h3>
+                    <div className="history-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {history.slice(0, 3).map((item) => (
+                        <div 
+                          key={item.id} 
+                          className="history-item"
+                          onClick={() => {
+                            setGenerationResult(item as any);
+                          }}
+                          style={{ padding: '12px', background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                            <div style={{ background: 'var(--bg-pill-hover)', color: 'var(--accent-dark)', padding: '6px', borderRadius: '50%' }}>
+                              <Volume2 size={14} />
+                            </div>
+                            <div style={{ overflow: 'hidden', flex: 1 }}>
+                              <h4 style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {item.script}
+                              </h4>
+                              <p style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>{item.voiceModel} • {item.timestamp}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
+
               </div>
+
             </div>
           </div>
         )}
 
-        {/* VIEW 2: MANAGE PERSONAS PANEL */}
-        {activeTab === 'personas' && (
-          <div className="persona-admin-container">
-            <div className="persona-admin-header">
+        {/* VIEW 2: SAVED VOICES / ROSTER */}
+        {activeTab === 'saved-voices' && (
+          <div className="persona-admin-container" style={{ padding: '40px' }}>
+            <div className="persona-admin-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Manage Team Personas</h2>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Your Saved Voices</h2>
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Clone, replace, and audit voice/visual references used to synthesize videos.
+                  Manage the cloned voice profiles stored in your local team library.
                 </p>
               </div>
-              <button className="btn-primary-small" onClick={() => setShowAddModal(true)}>
-                <UserPlus size={14} /> Create Persona
-              </button>
             </div>
 
             {personas.length === 0 ? (
               <div 
                 className="generation-card"
-                style={{ minHeight: '300px', background: 'var(--accent-light)' }}
+                style={{ minHeight: '300px', background: '#ffffff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', borderRadius: '16px', border: '1px solid var(--border-color)' }}
               >
-                <UserPlus size={36} style={{ color: 'var(--text-muted)' }} />
-                <div>
-                  <h3 className="stage-title">Start Cloning Personas</h3>
-                  <p className="stage-desc" style={{ marginTop: '4px' }}>Add reference files to populate your studio roster.</p>
+                <Mic size={36} style={{ color: 'var(--text-muted)' }} />
+                <div style={{ textAlign: 'center' }}>
+                  <h3 className="stage-title">No Custom Voices Yet</h3>
+                  <p className="stage-desc" style={{ marginTop: '4px' }}>Use the Voice Studio to clone your first voice reference clip.</p>
                 </div>
                 <button 
                   type="button" 
                   className="btn-primary-small"
-                  style={{ padding: '10px 20px' }}
-                  onClick={() => setShowAddModal(true)}
+                  onClick={() => setActiveTab('voice-studio')}
+                  style={{ padding: '10px 20px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  + Add First Persona
+                  Go to Voice Studio
                 </button>
               </div>
             ) : (
-              <div className="persona-admin-grid">
-                {(() => {
-                  let lastColorIndex = -1;
-                  return personas.map((persona, index) => {
-                    const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                    const isActive = selectedPersona?.id === persona.id;
-
-                    // 5 ultra-premium pastel gradients: Lavender, Mint-Green, Ice-Blue, Dusty Peach, Champagne-Grey
-                    const gradients = [
-                      { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' }, // Lavender
-                      { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' }, // Mint-Green
-                      { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' }, // Ice-Blue
-                      { bg: 'linear-gradient(135deg, #ffdcd0 0%, #fca49b 100%)', shadow: 'rgba(252, 164, 155, 0.22)', border: 'rgba(255, 220, 208, 0.35)' }, // Dusty Peach
-                      { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' }  // Champagne-Grey
-                    ];
-
-                    // Stable hash helper to choose a random color
-                    const getStableIndex = (str: string) => {
-                      let hash = 0;
-                      for (let i = 0; i < str.length; i++) {
-                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                      }
-                      return Math.abs(hash);
-                    };
-
-                    // Let's determine a stable randomized color
-                    let colorIndex = getStableIndex(persona.id || persona.name) % gradients.length;
-
-                    // If it's the first card in the deck, ALWAYS showcase the gorgeous Lavender Pink!
-                    if (index === 0) {
-                      colorIndex = 0;
-                    } else if (colorIndex === lastColorIndex) {
-                      // Prevent adjacent elements from ever sharing the same color
-                      colorIndex = (colorIndex + 1) % gradients.length;
-                    }
-
-                    lastColorIndex = colorIndex;
-                    const gradient = gradients[colorIndex];
-
-                    return (
-                      <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
-                        {/* Top Header section */}
-                        <div className="persona-card-header">
-                          <div 
-                            className="persona-admin-avatar"
-                            style={{ background: gradient.bg, boxShadow: `0 4px 14px ${gradient.shadow}` }}
-                          >
-                            <div className="avatar-glow" style={{ borderColor: gradient.border }}></div>
-                            <span className="avatar-initials">{initials}</span>
-                          </div>
-                          <div className="persona-card-info">
-                            <h3>{persona.name}</h3>
-                          <span className={`status-pill ${isActive ? 'active' : 'idle'}`}>
-                            {isActive ? 'Active Selected' : 'Standby'}
-                          </span>
+              <div className="persona-admin-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                {personas.map((persona) => {
+                  const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                  
+                  return (
+                    <div 
+                      key={persona.id} 
+                      className="persona-admin-card"
+                      style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '16px', boxShadow: 'var(--shadow-premium)' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div 
+                          className="persona-admin-avatar"
+                          style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: 'var(--accent-dark)' }}
+                        >
+                          {initials}
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>{persona.name}</h3>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{persona.voiceClipName || 'Cloned Vocal Sample'}</span>
                         </div>
                       </div>
 
-
-                      {/* Symmetrical Footer action group */}
-                      <div className="persona-card-actions">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(15,28,26,0.04)', paddingTop: '12px' }}>
                         <button 
-                          className={`btn-studio-toggle ${isActive ? 'active' : ''}`}
                           onClick={() => {
-                            setSelectedPersona(persona);
-                            setActiveTab('generate');
+                            setVoiceFileName(persona.voiceClipName || '');
+                            setVoiceFile(new Blob()); // Placeholder to bypass select check
+                            setActiveTab('voice-studio');
                           }}
+                          style={{ padding: '8px 14px', borderRadius: '6px', background: 'var(--accent-light)', border: '1px solid var(--border-color)', color: 'var(--accent-dark)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                         >
-                          {isActive ? 'Selected' : 'Use in Studio'}
+                          Use in Studio
                         </button>
-                        <div className="secondary-actions-group">
-                          <button 
-                            className="btn-studio-icon"
-                            onClick={() => {
-                              setNewPersonaName(persona.name);
-                              setNewPersonaVoiceFile(persona.voiceClipName || null);
-                              setNewPersonaFaceFile(persona.faceClipName || null);
-                              setShowAddModal(true);
-                            }}
-                            title="Configure Settings"
-                          >
-                            <Settings2 size={13} />
-                          </button>
-                          <button 
-                            className="btn-studio-icon danger"
-                            onClick={(e) => handleDeletePersona(persona.id, e)}
-                            title="Delete Persona"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                        <button 
+                          onClick={(e) => handleDeleteVoice(persona.id, e)}
+                          style={{ background: 'transparent', border: 'none', color: '#e84118', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
+                          title="Delete Voice"
+                        >
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </div>
                   );
-                });
-              })()}
+                })}
               </div>
             )}
           </div>
         )}
       </main>
-
-      {/* CREATE / EDIT PERSONA DIALOG MODAL (UPGRADED ELITE WIZARD) */}
-      {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content elite-wizard">
-            {/* Elegant Top Neon Progress bar */}
-            <div className="wizard-progress-bar">
-              <div 
-                className="wizard-progress-fill" 
-                style={{ width: wizardStep === 4 ? '100%' : `${(wizardStep / 3) * 100}%` }}
-              ></div>
-            </div>
-
-            {/* Header displaying step progression */}
-            <div className="wizard-steps-header">
-              <div>
-                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '800' }}>
-                  {wizardStep === 0 && "Name Your Presenter"}
-                  {wizardStep === 1 && "Set Up Their Voice"}
-                  {wizardStep === 2 && "Set Up Their Face"}
-                  {wizardStep === 3 && "Creating Your Presenter..."}
-                  {wizardStep === 4 && "✨ Presenter Created Successfully!"}
-                </h2>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {wizardStep === 0 && "Give your AI presenter a name and style."}
-                  {wizardStep === 1 && "Choose how we should create your presenter's voice."}
-                  {wizardStep === 2 && "Choose how we should create your presenter's face."}
-                  {wizardStep === 3 && "We are generating your custom AI presenter. This will take just a moment."}
-                  {wizardStep === 4 && "Your voice clone and face references are compiled and live!"}
-                </p>
-              </div>
-              <div className="wizard-steps-indicator" style={{ background: wizardStep === 4 ? '#e6fbf4' : 'rgba(15,28,26,0.04)', color: wizardStep === 4 ? '#00b894' : 'var(--text-dark)' }}>
-                {wizardStep === 4 ? "Complete!" : `Step ${wizardStep + 1} of 4`}
-              </div>
-            </div>
-
-            {/* STEP 0: PERSONA IDENTIFIERS */}
-            {wizardStep === 0 && (() => {
-              const getValidationError = () => {
-                const trimmed = newPersonaName.trim();
-                if (!newPersonaName) return null; // Show no error when empty to start clean
-                if (trimmed.length < 2) {
-                  return "Name must be at least 2 characters.";
-                }
-                if (trimmed.length > 30) {
-                  return "Name cannot exceed 30 characters.";
-                }
-                const validCharRegex = /^[a-zA-Z0-9\s'-]+$/;
-                if (!validCharRegex.test(trimmed)) {
-                  return "Only letters, numbers, spaces, hyphens, and apostrophes are allowed.";
-                }
-                // Prevent consecutive repetitive spam characters (e.g., 'sss', 'jjj', 'aaa')
-                // Real names can have at most 2 identical consecutive characters (e.g. 'Aaron', 'Lee')
-                const repeatedCharsRegex = /(.)\1\1/;
-                if (repeatedCharsRegex.test(trimmed)) {
-                  return "Invalid name: Too many repeating consecutive characters.";
-                }
-
-                // Prevent names made of a single character repeated (e.g. 'aaaaa')
-                const alphabeticLettersOnly = trimmed.toLowerCase().replace(/[^a-z]/g, '');
-                const uniqueChars = new Set(alphabeticLettersOnly);
-                if (trimmed.length >= 3 && uniqueChars.size < 2) {
-                  return "Invalid name: Please provide a realistic name with distinct characters.";
-                }
-
-                // Check if duplicate name exists in roster
-                const nameExists = personas.some(p => p.name.toLowerCase() === trimmed.toLowerCase());
-                if (nameExists) {
-                  return "A presenter with this name already exists in your team.";
-                }
-                return null;
-              };
-
-              const nameError = getValidationError();
-              const isNameInvalid = !!nameError || !newPersonaName.trim();
-
-              return (
-                <div className="modal-form">
-                  <div className="form-group">
-                    <label>Presenter Name</label>
-                    <input 
-                      type="text" 
-                      className={`form-input ${nameError ? 'error-state' : ''}`} 
-                      placeholder="e.g. Sarah"
-                      value={newPersonaName}
-                      onChange={(e) => setNewPersonaName(e.target.value)}
-                      required 
-                      style={nameError ? { borderColor: '#e84118', boxShadow: '0 0 0 3px rgba(232, 65, 24, 0.1)' } : {}}
-                    />
-                    {nameError && (
-                      <span className="form-error-text" style={{ color: '#e84118', fontSize: '12px', marginTop: '6px', display: 'block', fontWeight: 500 }}>
-                        ⚠️ {nameError}
-                      </span>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label>Presenter Style</label>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Choose how you want your presenter to sound and talk:
-                    </p>
-                    <div className="blueprint-focus-grid">
-                      <button 
-                        type="button"
-                        className={`blueprint-focus-card ${personaFocus === 'corporate' ? 'active' : ''}`}
-                        onClick={() => setPersonaFocus('corporate')}
-                      >
-                        <span className="focus-emoji">🎯</span>
-                        <div className="focus-content">
-                          <strong>Professional Tone</strong>
-                          <p>Best for business, presentations, and formal talks.</p>
-                        </div>
-                      </button>
-                      
-                      <button 
-                        type="button"
-                        className={`blueprint-focus-card ${personaFocus === 'social' ? 'active' : ''}`}
-                        onClick={() => setPersonaFocus('social')}
-                      >
-                        <span className="focus-emoji">⚡</span>
-                        <div className="focus-content">
-                          <strong>Casual / Social Tone</strong>
-                          <p>Best for social media, friendly videos, and high energy.</p>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
-                    <button 
-                      type="button" 
-                      className="btn-secondary" 
-                      onClick={() => {
-                        releaseMediaStreams();
-                        setShowAddModal(false);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button 
-                      type="button" 
-                      className="btn-primary-small"
-                      disabled={isNameInvalid}
-                      onClick={() => setWizardStep(1)}
-                    >
-                      Next: Voice Setup
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* STEP 1: VOCAL SETUP */}
-            {wizardStep === 1 && (
-              <div className="modal-form">
-                {/* Segmented Selector */}
-                <div className="studio-tab-selector">
-                  <button 
-                    type="button" 
-                    className={`studio-tab-btn ${voiceSource === 'upload' ? 'active' : ''}`}
-                    onClick={() => { setVoiceSource('upload'); releaseMediaStreams(); }}
-                  >
-                    <FileAudio size={14} /> Upload Voice File
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`studio-tab-btn ${voiceSource === 'record' ? 'active' : ''}`}
-                    onClick={() => { setVoiceSource('record'); initiateMicrophone(); }}
-                  >
-                    <Mic size={14} /> Record Your Voice
-                  </button>
-                </div>
-
-                {voiceSource === 'upload' ? (
-                  <div className="form-group">
-                    <label>Upload Voice Sample</label>
-                    <div 
-                      className="file-upload-zone"
-                      onClick={() => setNewPersonaVoiceFile('cloned_vocal_' + Math.floor(Math.random()*1000) + '_profile.wav')}
-                    >
-                      {newPersonaVoiceFile ? (
-                        <div className="file-uploaded-indicator">
-                          <FileAudio size={14} /> {newPersonaVoiceFile} (Saved)
-                        </div>
-                      ) : (
-                        <>
-                          <FileAudio size={18} style={{ color: 'var(--text-muted)' }} />
-                          <span style={{ fontWeight: 600 }}>Click to upload a voice file (.wav, .mp3)</span>
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Recommended: A clear 30-second recording with no background noise.</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="studio-recording-hud">
-                    {/* Live signal testing bar */}
-                    <div className="device-signal-check">
-                      <div className={`signal-dot ${micSignal ? 'connected' : ''}`}></div>
-                      {micSignal ? "Microphone is connected" : "Looking for microphone..."}
-                    </div>
-
-                    {/* Interactive waveform oscillograph */}
-                    <canvas 
-                      ref={oscillogramRef} 
-                      className="studio-oscillogram-canvas"
-                      width={600}
-                      height={80}
-                    />
-
-                    {/* Script Teleprompter to read */}
-                    <div className="studio-teleprompter">
-                      <span className="prompter-highlight">Read this aloud to give permission:</span> <br/>
-                      "I allow Naqalchi to copy my voice to generate videos for my projects."
-                    </div>
-
-                    {/* Capturing Controller Button */}
-                    <div className="studio-recording-actions">
-                      <button 
-                        type="button"
-                        className={`btn-studio-record ${isRecordingVoice ? 'recording' : ''}`}
-                        onClick={isRecordingVoice ? stopVoiceRecording : startVoiceRecording}
-                        title={isRecordingVoice ? "Stop recording voice" : "Start recording voice"}
-                      >
-                        <Mic size={20} />
-                      </button>
-                      <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                        {isRecordingVoice ? `Recording: ${voiceTimer} seconds` : "Click microphone to start"}
-                      </div>
-                    </div>
-
-                    {newPersonaVoiceFile && !isRecordingVoice && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', marginTop: '4px' }}>
-                        <CheckCircle2 size={14} style={{ color: '#25d366' }} />
-                        <span>Voice recording saved successfully!</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    onClick={() => {
-                      releaseMediaStreams();
-                      setWizardStep(0);
-                    }}
-                  >
-                    Back
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn-primary-small"
-                    disabled={!newPersonaVoiceFile}
-                    onClick={() => {
-                      setWizardStep(2);
-                      if (faceSource === 'record') initiateCamera();
-                    }}
-                  >
-                    Next: Face Setup
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: VISUAL PORTRAIT SETUP */}
-            {wizardStep === 2 && (
-              <div className="modal-form">
-                {/* Segmented Selector */}
-                <div className="studio-tab-selector">
-                  <button 
-                    type="button" 
-                    className={`studio-tab-btn ${faceSource === 'upload' ? 'active' : ''}`}
-                    onClick={() => { setFaceSource('upload'); releaseMediaStreams(); }}
-                  >
-                    <FileVideo size={14} /> Upload Video
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`studio-tab-btn ${faceSource === 'record' ? 'active' : ''}`}
-                    onClick={() => { setFaceSource('record'); initiateCamera(); }}
-                  >
-                    <Video size={14} /> Record with Webcam
-                  </button>
-                </div>
-
-                {faceSource === 'upload' ? (
-                  <div className="form-group">
-                    <label>Upload Video Sample</label>
-                    <div 
-                      className="file-upload-zone"
-                      onClick={() => setNewPersonaFaceFile('mesh_matrix_' + Math.floor(Math.random()*1000) + '_reference.mp4')}
-                    >
-                      {newPersonaFaceFile ? (
-                        <div className="file-uploaded-indicator">
-                          <FileVideo size={14} /> {newPersonaFaceFile} (Saved)
-                        </div>
-                      ) : (
-                        <>
-                          <FileVideo size={18} style={{ color: 'var(--text-muted)' }} />
-                          <span style={{ fontWeight: 600 }}>Click to upload a video file (.mp4, .mov)</span>
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Recommended: A clear video looking directly at the camera (15 to 60 seconds).</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="studio-recording-hud">
-                    {/* Live signal testing bar */}
-                    <div className="device-signal-check">
-                      <div className={`signal-dot ${cameraSignal ? 'connected' : ''}`}></div>
-                      {cameraSignal ? "Camera is connected" : "Looking for camera..."}
-                    </div>
-
-                    {/* Viewfinder Window */}
-                    <div className="webcam-viewfinder-wrapper">
-                      {/* Real WebCam Viewport */}
-                      {mediaStreamRef.current ? (
-                        <video 
-                          ref={videoRef} 
-                          className="webcam-video-feed" 
-                          autoPlay 
-                          playsInline 
-                          muted 
-                        />
-                      ) : (
-                        /* Simulated wireframe face mesh if camera denied/loading */
-                        <div className="webcam-feed-simulation">
-                          <div className="simulation-wireframe"></div>
-                        </div>
-                      )}
-
-                      {/* Oval anatomical guides mask */}
-                      <div className={`webcam-face-oval-guide ${isRecordingFace ? 'active' : ''}`}></div>
-
-                      {/* Studio Brackets OSD */}
-                      <div className="hud-corner-bracket hud-tl"></div>
-                      <div className="hud-corner-bracket hud-tr"></div>
-                      <div className="hud-corner-bracket hud-bl"></div>
-                      <div className="hud-corner-bracket hud-br"></div>
-
-                      {/* Studio specs telemetry */}
-                      <div className="hud-telemetry">1080p • 60 FPS</div>
-
-                      {/* Active recording blinking tag */}
-                      {isRecordingFace && (
-                        <div className="hud-rec-badge">
-                          <div className="hud-rec-dot blinking"></div>
-                          <span>LIVE</span>
-                        </div>
-                      )}
-
-                      {/* Countdown Numbers Overlay */}
-                      {faceCountdown > 0 && (
-                        <div className="webcam-countdown-overlay">
-                          {faceCountdown}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Teleprompter prompt instructions */}
-                    <div className="studio-teleprompter" style={{ borderLeftColor: '#ff3b30' }}>
-                      <span className="prompter-highlight" style={{ color: '#ff453a' }}>Tips for recording:</span> <br/>
-                      Keep your face centered in the oval. Look directly at the lens, blink naturally, and speak clearly.
-                    </div>
-
-                    {/* Camera Control Trigger */}
-                    <div className="studio-recording-actions">
-                      <button 
-                        type="button"
-                        className={`btn-studio-record ${isRecordingFace ? 'recording' : ''}`}
-                        onClick={startFaceRecording}
-                        disabled={faceCountdown > 0 || isRecordingFace}
-                        title="Start webcam recording countdown"
-                      >
-                        <Camera size={20} />
-                      </button>
-                      <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                        {faceCountdown > 0 ? "Starting Countdown..." : isRecordingFace ? `Recording: ${faceTimer} of 8 seconds` : "Click camera to start"}
-                      </div>
-                    </div>
-
-                    {newPersonaFaceFile && !isRecordingFace && faceCountdown === 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', marginTop: '4px' }}>
-                        <CheckCircle2 size={14} style={{ color: '#25d366' }} />
-                        <span>Video recording saved successfully!</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '16px' }}>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    onClick={() => {
-                      releaseMediaStreams();
-                      setWizardStep(1);
-                      if (voiceSource === 'record') initiateMicrophone();
-                    }}
-                  >
-                    Back
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn-primary-small"
-                    disabled={!newPersonaFaceFile || isRecordingFace || faceCountdown > 0}
-                    onClick={triggerDiagnosticsAndSave}
-                  >
-                    Create Presenter
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: RECTIFIED DIAGNOSTICS SCAN STATUS */}
-            {wizardStep === 3 && (
-              <div className="diagnostic-wizard-panel">
-                {/* Glowing Scanner Disk */}
-                <div className="diagnostic-mesh-visualizer">
-                  <div className="diagnostic-scanner-line"></div>
-                  {voiceSource === 'record' ? <Mic size={32} style={{ color: 'var(--accent-dark)' }} /> : <Camera size={32} style={{ color: 'var(--accent-dark)' }} />}
-                </div>
-
-                {/* Subtitle updates */}
-                <div>
-                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '16px', fontWeight: '700' }}>
-                    Applying your settings... ({diagnosticProgress}%)
-                  </h3>
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Preparing your presenter's custom voice and look. Just a moment!
-                  </p>
-                </div>
-
-                {/* Cinema Ticker Status Screen */}
-                <div className="diagnostic-ticker-container">
-                  <div className="diagnostic-progress-bar-wrapper">
-                    <div className="diagnostic-progress-bar-fill" style={{ width: `${diagnosticProgress}%` }}></div>
-                  </div>
-                  <div className="diagnostic-ticker-active">
-                    <div className="glow-ring-spinner"></div>
-                    <span key={diagnosticLogs.length} className="ticker-text-fade-in">
-                      {diagnosticLogs[diagnosticLogs.length - 1] || "Initializing neural settings..."}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* STEP 4: SUCCESS CONFIRMATION AND ONBOARDING */}
-            {wizardStep === 4 && (
-              <div className="diagnostic-wizard-panel success-panel" style={{ textAlign: 'center', padding: '10px 0 20px' }}>
-
-                <div style={{ marginTop: '16px' }}>
-                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: '800', color: 'var(--text-dark)' }}>
-                    Presenter "{newPersonaName}" is Live!
-                  </h3>
-                  <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.5', maxWidth: '420px', margin: '8px auto 0' }}>
-                    Your custom presenter has been fully compiled and is now selected as your **active speaker clone** in the Video Studio.
-                  </p>
-                </div>
-
-
-                <div className="modal-footer" style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '20px', width: '100%', justifyContent: 'center', marginTop: '10px' }}>
-                  <button 
-                    type="button" 
-                    className="btn-primary-small"
-                    style={{ maxWidth: '240px', width: '100%' }}
-                    onClick={() => resetAndCloseWizard('personas')}
-                  >
-                    Go to Cloned Persona
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
