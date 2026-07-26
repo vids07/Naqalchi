@@ -485,7 +485,7 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1, paddingBottom: '40px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', flexGrow: 1, paddingBottom: '40px' }}>
               <div 
                 className="studio-console-card" 
                 style={{
