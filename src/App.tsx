@@ -105,6 +105,18 @@ export default function App() {
   const [personaName, setPersonaName] = useState<string>('');
   const [isSavingPersona, setIsSavingPersona] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [activePersonaId, setActivePersonaId] = useState<string>('');
+
+  useEffect(() => {
+    if (!activePersonaId && personas.length > 0) {
+      const prince = personas.find(p => p.name.toLowerCase() === 'prince');
+      if (prince) {
+        setActivePersonaId(prince.id);
+      } else {
+        setActivePersonaId(personas[0].id);
+      }
+    }
+  }, [personas, activePersonaId]);
 
 
 
@@ -402,7 +414,7 @@ export default function App() {
           </div>
           <div className="brand-info">
             <h1>Naqalchi</h1>
-            <p>VOICE LABS</p>
+            <p>AI CREATIVE SUITE</p>
           </div>
           <button 
             className="btn-collapse-sidebar"
@@ -430,16 +442,16 @@ export default function App() {
             onClick={() => setActiveTab('saved-voices')}
           >
             <UserCheck size={18} />
-            Saved Voices ({personas.length})
+            Manage Personas
           </button>
         </nav>
 
         <div className="sidebar-footer">
           <div className="user-profile">
-            <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>VL</div>
+            <div className="user-avatar" style={{ background: 'var(--accent-dark)', color: '#ffffff' }}>AD</div>
             <div className="user-meta">
-              <h4 style={{ color: 'var(--text-dark)', fontSize: '13px', fontWeight: 600 }}>Voice Creator</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>STUDIO ACCOUNT</p>
+              <h4>Admin Studio</h4>
+              <p>INTERNAL ACCOUNT</p>
             </div>
           </div>
         </div>
@@ -458,34 +470,41 @@ export default function App() {
                 <PanelLeft size={20} />
               </button>
             )}
-            <h2 className="page-title" style={{ fontSize: '20px' }}>
-              {activeTab === 'voice-studio' ? 'Instant Voice Cloning' : 'Saved Roster'}
-            </h2>
           </div>
         </header>
 
         {/* VIEW 1: VOICE STUDIO (Zero-Scroll Stepper Studio Console) */}
         {activeTab === 'voice-studio' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 120px)', padding: '0 40px', overflow: 'hidden' }}>
-            <div 
-              className="studio-console-card" 
-              style={{
-                width: '100%',
-                maxWidth: '720px',
-                background: '#ffffff',
-                borderRadius: '20px',
-                border: '1px solid var(--border-color)',
-                boxShadow: 'var(--shadow-premium)',
-                padding: '36px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                minHeight: '480px',
-                maxHeight: '85vh',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-            >
+          <div className="persona-admin-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div className="persona-admin-header" style={{ marginBottom: '28px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Instant Voice Cloning</h2>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Clone reference voice clips and generate custom narrated scripts.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1, paddingBottom: '40px' }}>
+              <div 
+                className="studio-console-card" 
+                style={{
+                  width: '100%',
+                  maxWidth: '720px',
+                  background: '#ffffff',
+                  borderRadius: '20px',
+                  border: '1px solid var(--border-color)',
+                  boxShadow: 'var(--shadow-premium)',
+                  padding: '36px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '480px',
+                  maxHeight: '85vh',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+              >
               {/* Stepper Progress Bar */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
                 {[
@@ -514,6 +533,7 @@ export default function App() {
                     </div>
                     <span 
                       style={{ 
+                        fontFamily: 'var(--font-title)',
                         fontSize: '13px', 
                         fontWeight: currentStep === st.step ? 700 : 500, 
                         color: currentStep === st.step ? 'var(--text-dark)' : 'var(--text-muted)'
@@ -543,7 +563,7 @@ export default function App() {
                 {currentStep === 1 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>How would you like to provide the reference voice?</h3>
+                      <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>How would you like to provide the reference voice?</h3>
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Provide a short sample (10s to 30s) of the voice you want to clone.</p>
                     </div>
 
@@ -639,7 +659,7 @@ export default function App() {
                 {currentStep === 2 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>Select Vocal Engine Model</h3>
+                      <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>Select Vocal Engine Model</h3>
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Choose the AI voice synthesis model that matches your script style.</p>
                     </div>
 
@@ -668,7 +688,7 @@ export default function App() {
                           <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(15,28,26,0.06)', color: 'var(--text-dark)', padding: '3px 8px', borderRadius: '20px', display: 'inline-block', marginBottom: '8px' }}>
                             {model.tag}
                           </span>
-                          <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-dark)' }}>{model.name}</h4>
+                          <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '14px', fontWeight: 700, color: 'var(--text-dark)' }}>{model.name}</h4>
                           <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>{model.desc}</p>
                         </div>
                       ))}
@@ -680,7 +700,7 @@ export default function App() {
                 {currentStep === 3 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>What should your cloned voice say?</h3>
+                      <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>What should your cloned voice say?</h3>
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>Pick one of our curated sentences or write your own custom script below.</p>
                     </div>
 
@@ -791,7 +811,7 @@ export default function App() {
                         </div>
 
                         <div style={{ textAlign: 'center' }}>
-                          <h4 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>{stages[generationStage].title}</h4>
+                          <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>{stages[generationStage].title}</h4>
                           <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>{stages[generationStage].desc}</p>
                         </div>
                       </div>
@@ -809,7 +829,7 @@ export default function App() {
                             {isPlaying ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
                           </button>
                           <div style={{ flex: 1, overflow: 'hidden' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', display: 'block' }}>Your Cloned Voice Clip</span>
+                            <span style={{ fontFamily: 'var(--font-title)', fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', display: 'block' }}>Your Cloned Voice Clip</span>
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
                               "{generationResult.script}"
                             </span>
@@ -827,7 +847,7 @@ export default function App() {
                                   onChange={(e) => setSaveAsPersona(e.target.checked)}
                                   style={{ width: '15px', height: '15px', accentColor: 'var(--accent-dark)' }}
                                 />
-                                <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-dark)' }}>
+                                <span style={{ fontFamily: 'var(--font-title)', fontSize: '12.5px', fontWeight: 600, color: 'var(--text-dark)' }}>
                                   Save voice as permanent Persona to library?
                                 </span>
                               </label>
@@ -977,92 +997,169 @@ export default function App() {
 
             </div>
           </div>
+          </div>
         )}
 
         {/* VIEW 2: SAVED VOICES / ROSTER */}
         {activeTab === 'saved-voices' && (
-          <div className="persona-admin-container" style={{ padding: '40px' }}>
-            <div className="persona-admin-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="persona-admin-container">
+            <div className="persona-admin-header">
               <div>
-                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Your Saved Voices</h2>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Manage Team Personas</h2>
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Manage the cloned voice profiles stored in your local team library.
+                  Clone, replace, and audit voice/visual references used to synthesize videos.
                 </p>
               </div>
+              <button 
+                className="btn-primary-small"
+                onClick={() => {
+                  setActiveTab('voice-studio');
+                  setCurrentStep(1);
+                  setGenerationResult(null);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+                Create Persona
+              </button>
             </div>
 
             {personas.length === 0 ? (
               <div 
                 className="generation-card"
-                style={{ minHeight: '300px', background: '#ffffff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', borderRadius: '16px', border: '1px solid var(--border-color)' }}
+                style={{ minHeight: '300px', background: 'var(--accent-light)' }}
               >
-                <Mic size={36} style={{ color: 'var(--text-muted)' }} />
-                <div style={{ textAlign: 'center' }}>
-                  <h3 className="stage-title">No Custom Voices Yet</h3>
-                  <p className="stage-desc" style={{ marginTop: '4px' }}>Use the Voice Studio to clone your first voice reference clip.</p>
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+                <div>
+                  <h3 className="stage-title">Start Cloning Personas</h3>
+                  <p className="stage-desc" style={{ marginTop: '4px' }}>Add reference files to populate your studio roster.</p>
                 </div>
                 <button 
                   type="button" 
                   className="btn-primary-small"
+                  style={{ padding: '10px 20px' }}
                   onClick={() => {
                     setActiveTab('voice-studio');
                     setCurrentStep(1);
                   }}
-                  style={{ padding: '10px 20px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  Go to Voice Studio
+                  + Add First Persona
                 </button>
               </div>
             ) : (
-              <div className="persona-admin-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                {personas.map((persona) => {
-                  const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                  
-                  return (
-                    <div 
-                      key={persona.id} 
-                      className="persona-admin-card"
-                      style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '16px', boxShadow: 'var(--shadow-premium)' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div 
-                          className="persona-admin-avatar"
-                          style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: 'var(--accent-dark)' }}
-                        >
-                          {initials}
-                        </div>
-                        <div>
-                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>{persona.name}</h3>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{persona.voiceClipName || 'Cloned Vocal Sample'}</span>
-                        </div>
-                      </div>
+              <div className="persona-admin-grid">
+                {(() => {
+                  let lastColorIndex = -1;
+                  return personas.map((persona, index) => {
+                    const initials = persona.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    const isActive = activePersonaId === persona.id;
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(15,28,26,0.04)', paddingTop: '12px' }}>
-                        <button 
-                          onClick={() => {
-                            setVoiceFileName(persona.voiceClipName || '');
-                            setVoiceFile(new Blob());
-                            setActiveTab('voice-studio');
-                            setCurrentStep(3); // Start right at script select with loaded voice
-                          }}
-                          style={{ padding: '8px 14px', borderRadius: '6px', background: 'var(--accent-light)', border: '1px solid var(--border-color)', color: 'var(--accent-dark)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
-                        >
-                          Use in Studio
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPersonas(prev => prev.filter(p => p.id !== persona.id));
-                          }}
-                          style={{ background: 'transparent', border: 'none', color: '#e84118', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
-                          title="Delete Voice"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                    // 5 ultra-premium pastel gradients: Lavender, Mint-Green, Ice-Blue, Dusty Peach, Champagne-Grey
+                    const gradients = [
+                      { bg: 'linear-gradient(135deg, #ffd3e8 0%, #bfa8e6 100%)', shadow: 'rgba(191, 168, 230, 0.22)', border: 'rgba(255, 211, 232, 0.35)' }, // Lavender
+                      { bg: 'linear-gradient(135deg, #d2f1eb 0%, #87cbd0 100%)', shadow: 'rgba(135, 203, 208, 0.22)', border: 'rgba(210, 241, 235, 0.35)' }, // Mint-Green
+                      { bg: 'linear-gradient(135deg, #e0f2fe 0%, #9bc5fb 100%)', shadow: 'rgba(155, 197, 251, 0.22)', border: 'rgba(224, 242, 254, 0.35)' }, // Ice-Blue
+                      { bg: 'linear-gradient(135deg, #ffdcd0 0%, #fca49b 100%)', shadow: 'rgba(252, 164, 155, 0.22)', border: 'rgba(255, 220, 208, 0.35)' }, // Dusty Peach
+                      { bg: 'linear-gradient(135deg, #f5f5f5 0%, #c4cbd0 100%)', shadow: 'rgba(196, 203, 208, 0.22)', border: 'rgba(245, 245, 245, 0.35)' }  // Champagne-Grey
+                    ];
+
+                    // Stable hash helper to choose a random color
+                    const getStableIndex = (str: string) => {
+                      let hash = 0;
+                      for (let i = 0; i < str.length; i++) {
+                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      return Math.abs(hash);
+                    };
+
+                    // Let's determine a stable randomized color
+                    let colorIndex = getStableIndex(persona.id || persona.name) % gradients.length;
+
+                    // If it's the first card in the deck, ALWAYS showcase the gorgeous Lavender Pink!
+                    if (index === 0) {
+                      colorIndex = 0;
+                    } else if (colorIndex === lastColorIndex) {
+                      // Prevent adjacent elements from ever sharing the same color
+                      colorIndex = (colorIndex + 1) % gradients.length;
+                    }
+
+                    lastColorIndex = colorIndex;
+                    const gradient = gradients[colorIndex];
+
+                    return (
+                      <div key={persona.id} className={`persona-admin-card ${isActive ? 'active' : ''}`}>
+                        {/* Top Header section */}
+                        <div className="persona-card-header">
+                          <div 
+                            className="persona-admin-avatar"
+                            style={{ background: gradient.bg, boxShadow: `0 4px 14px ${gradient.shadow}` }}
+                          >
+                            <div className="avatar-glow" style={{ borderColor: gradient.border }}></div>
+                            <span className="avatar-initials">{initials}</span>
+                          </div>
+                          <div className="persona-card-info">
+                            <h3>{persona.name}</h3>
+                            <span className={`status-pill ${isActive ? 'active' : 'idle'}`}>
+                              {isActive ? 'Active Selected' : 'Standby'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Symmetrical Footer action group */}
+                        <div className="persona-card-actions">
+                          <button 
+                            className={`btn-studio-toggle ${isActive ? 'active' : ''}`}
+                            onClick={() => {
+                              setActivePersonaId(persona.id);
+                              setVoiceFileName(persona.voiceClipName || '');
+                              setVoiceFile(new Blob());
+                              setActiveTab('voice-studio');
+                              setCurrentStep(3); // Start right at script select with loaded voice
+                            }}
+                          >
+                            {isActive ? 'Selected' : 'Use in Studio'}
+                          </button>
+                          <div className="secondary-actions-group">
+                            <button 
+                              className="btn-studio-icon"
+                              onClick={() => {
+                                setActivePersonaId(persona.id);
+                                setVoiceFileName(persona.voiceClipName || '');
+                                setVoiceFile(new Blob());
+                                setActiveTab('voice-studio');
+                                setCurrentStep(3);
+                              }}
+                              title="Configure Settings"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+                              </svg>
+                            </button>
+                            <button 
+                              className="btn-studio-icon danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPersonas(prev => prev.filter(p => p.id !== persona.id));
+                              }}
+                              title="Delete Persona"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>

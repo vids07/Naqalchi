@@ -23,6 +23,10 @@
   padding: 0;
 }
 
+button, input, textarea, select {
+  font-family: inherit;
+}
+
 body {
   font-family: var(--font-body);
   background-color: var(--bg-app);
