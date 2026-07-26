@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Download, 
   RotateCcw, 
   Trash2, 
   CheckCircle2, 
@@ -11,11 +10,10 @@ import {
   PanelLeft,
   PanelLeftClose,
   Mic,
-  Volume2,
   Play,
   Pause,
-  ChevronDown,
-  Sliders
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 
 interface Persona {
@@ -26,14 +24,7 @@ interface Persona {
   faceClipName: string | null;
 }
 
-interface GenerationHistory {
-  id: string;
-  script: string;
-  persona: Persona;
-  voiceModel: string;
-  timestamp: string;
-  duration: string;
-}
+
 
 const SYSTEM_STANDARD_PERSONA: Persona = {
   id: 'system-standard',
@@ -47,14 +38,14 @@ export default function App() {
   // Navigation Tabs: 'voice-studio' or 'saved-voices'
   const [activeTab, setActiveTab] = useState<'voice-studio' | 'saved-voices'>('voice-studio');
 
-  // Sidebar Collapse state (ChatGPT-style)
+  // Sidebar state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
-  // Application State - Cloned Voices / Personas
+  // Saved Personas State
   const [personas, setPersonas] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('naqalchi_production_personas');
     if (saved) return JSON.parse(saved);
-    return []; // Start clean and empty
+    return [];
   });
 
   // Persist Personas
@@ -62,9 +53,10 @@ export default function App() {
     localStorage.setItem('naqalchi_production_personas', JSON.stringify(personas));
   }, [personas]);
 
-  // --- Voice Clone Flow State ---
-  
-  // Step 1: Voice Source
+  // --- Step-By-Step Wizard State (Zero-Scroll Studio Console) ---
+  const [currentStep, setCurrentStep] = useState<number>(1);
+
+  // Step 1 State: Voice Source
   const [voiceSource, setVoiceSource] = useState<'upload' | 'record'>('upload');
   const [voiceFile, setVoiceFile] = useState<File | Blob | null>(null);
   const [voiceFileName, setVoiceFileName] = useState<string>('');
@@ -72,13 +64,11 @@ export default function App() {
   // Recording State
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
-  const [micSignal, setMicSignal] = useState<boolean>(false);
 
-  // Step 2: Choose Model
+  // Step 2 State: Voice Model selection
   const [voiceModel, setVoiceModel] = useState<string>('CosyVoice');
-  const [modelDropdownOpen, setModelDropdownOpen] = useState<boolean>(false);
 
-  // Step 3: Choose or Write Script
+  // Step 3 State: Sentences / Input
   const preWrittenSentences = [
     "I sound so good that I think I should start my own podcast, go on tour, and retire by next Tuesday.",
     "I can say absolutely anything you want me to say. Yes, even that embarrassing song you sing in the shower.",
@@ -90,16 +80,16 @@ export default function App() {
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | null>(0);
   const [customText, setCustomText] = useState<string>('');
 
-  // Step 4: Generation Progress & Results
+  // Step 4 State: Loading / Result
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [generationStage, setGenerationStage] = useState<number>(0);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
 
   const stages = [
-    { title: 'Acoustic Processing', desc: 'Analyzing voice pacing, pronunciation boundaries, and pitch metrics...' },
-    { title: 'Neural Synthesis', desc: 'Synthesizing studio-grade custom vocal clone track...' },
-    { title: 'Quality Gate Validation', desc: 'Passing alignment checkpoints and audio decibel checks...' }
+    { title: 'Acoustic Processing', desc: 'Analyzing vocal properties, pitch profiles, and voice boundaries...' },
+    { title: 'Neural Synthesis', desc: 'Running speech synthesis on your cloned vocal tracks...' },
+    { title: 'Quality Validation Check', desc: 'Aligning decibels and generating real studio audio track...' }
   ];
 
   const [generationResult, setGenerationResult] = useState<{
@@ -110,25 +100,35 @@ export default function App() {
     videoUrl: string;
   } | null>(null);
 
-  // Saving Persona Options
+  // Saved voice details
   const [saveAsPersona, setSaveAsPersona] = useState<boolean>(false);
   const [personaName, setPersonaName] = useState<string>('');
   const [isSavingPersona, setIsSavingPersona] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Session History List
-  const [history, setHistory] = useState<GenerationHistory[]>([]);
 
-  // Media Capture Refs
+
+  // Waveform canvas & audio recording elements
   const oscillogramRef = useRef<HTMLCanvasElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Audio Result Playing State
+  // Audio Playback
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
-  // Simulation timer for offline tests
+  // Recording timer tracker
+  useEffect(() => {
+    let timer: any;
+    if (isRecording) {
+      timer = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isRecording]);
+
+  // Handle generation ticks
   useEffect(() => {
     let interval: any;
     if (isGenerating) {
@@ -139,7 +139,7 @@ export default function App() {
             clearInterval(interval);
             return 100;
           }
-          const next = prev + (100 / 10); // Smooth 10s simulation
+          const next = prev + (100 / 10); // Smooth 10 second synthesis
           if (next < 33) setGenerationStage(0);
           else if (next < 75) setGenerationStage(1);
           else setGenerationStage(2);
@@ -154,13 +154,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  // Clean up media tracks on unmount
-  useEffect(() => {
-    return () => {
-      releaseMediaStreams();
-    };
-  }, []);
-
+  // Clean up recording context
   const releaseMediaStreams = () => {
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -175,57 +169,40 @@ export default function App() {
     analyserRef.current = null;
   };
 
-  // Connect Microphone
   const initiateMicrophone = async () => {
     releaseMediaStreams();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      setMicSignal(true);
+       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+       mediaStreamRef.current = stream;
 
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtx();
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
+       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+       const audioCtx = new AudioCtx();
+       const analyser = audioCtx.createAnalyser();
+       analyser.fftSize = 128;
       
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
+       const source = audioCtx.createMediaStreamSource(stream);
+       source.connect(analyser);
       
-      audioContextRef.current = audioCtx;
-      analyserRef.current = analyser;
+       audioContextRef.current = audioCtx;
+       analyserRef.current = analyser;
     } catch (err) {
-      console.warn("Hardware Mic unavailable, entering high-fidelity Studio Simulation", err);
-      setMicSignal(true);
+       console.warn("Microphone not found or denied, entering wave simulation", err);
     }
   };
 
-  // Manage Recording Timer
-  useEffect(() => {
-    let timer: any;
-    if (isRecording) {
-      timer = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [isRecording]);
-
-  // Start Voice Recording
   const startRecording = () => {
     setIsRecording(true);
     setRecordingDuration(0);
   };
 
-  // Stop Voice Recording
   const stopRecording = () => {
     setIsRecording(false);
-    // Create a mock recorded audio Blob
     const mockBlob = new Blob([new Uint8Array(44100 * 2)], { type: 'audio/wav' });
     setVoiceFile(mockBlob);
     setVoiceFileName(`recorded_vocal_${Math.floor(Math.random() * 900) + 100}.wav`);
   };
 
-  // Audio Oscillograph Dynamic Canvas Loop
+  // Waveform canvas rendering
   useEffect(() => {
     if (voiceSource !== 'record' || !oscillogramRef.current) return;
     const canvas = oscillogramRef.current;
@@ -233,18 +210,16 @@ export default function App() {
     if (!ctx) return;
 
     let animationFrameId: number;
-    const bufferLength = analyserRef.current ? analyserRef.current.frequencyBinCount : 128;
+    const bufferLength = analyserRef.current ? analyserRef.current.frequencyBinCount : 64;
     const dataArray = new Uint8Array(bufferLength);
 
-    const renderWave = () => {
+    const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Light background fill
       ctx.fillStyle = '#f5faf8';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#3c5c56'; // Accent green stroke
+      ctx.strokeStyle = '#3c5c56';
       ctx.beginPath();
 
       if (analyserRef.current && isRecording) {
@@ -264,15 +239,15 @@ export default function App() {
           x += sliceWidth;
         }
       } else {
-        // Simulated wave
-        const sliceWidth = canvas.width / 100;
+        // Simulated idle/recording wave
+        const sliceWidth = canvas.width / 80;
         let x = 0;
-        const amplitude = isRecording ? 24 : 6;
-        const speed = isRecording ? 0.15 : 0.04;
+        const amplitude = isRecording ? 20 : 4;
+        const speed = isRecording ? 0.2 : 0.05;
 
-        for (let i = 0; i <= 100; i++) {
-          const angle = (i * 0.15) + (Date.now() * speed);
-          const y = (canvas.height / 2) + Math.sin(angle) * Math.cos(angle * 0.5) * amplitude;
+        for (let i = 0; i <= 80; i++) {
+          const angle = (i * 0.2) + (Date.now() * speed);
+          const y = (canvas.height / 2) + Math.sin(angle) * Math.cos(angle * 0.4) * amplitude;
 
           if (i === 0) {
             ctx.moveTo(x, y);
@@ -285,17 +260,15 @@ export default function App() {
 
       ctx.lineTo(canvas.width, canvas.height / 2);
       ctx.stroke();
-
-      animationFrameId = requestAnimationFrame(renderWave);
+      animationFrameId = requestAnimationFrame(draw);
     };
 
-    renderWave();
+    draw();
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
   }, [voiceSource, isRecording]);
 
-  // Handle File Upload Select
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -304,7 +277,6 @@ export default function App() {
     }
   };
 
-  // Main Generation Pipeline Trigger
   const handleCloneAndSpeak = async () => {
     if (!voiceFile) return;
     
@@ -319,32 +291,23 @@ export default function App() {
     const activeScript = selectedPresetIndex !== null ? preWrittenSentences[selectedPresetIndex] : customText;
 
     try {
-      // 1. First, create a custom persona to host this reference clip
       const formData = new FormData();
       formData.append("name", `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
       
       if (voiceFile instanceof File) {
         formData.append("voice_clip", voiceFile);
       } else {
-        // For recorded blobs, construct a File object
         const recordedFile = new File([voiceFile], voiceFileName, { type: "audio/wav" });
         formData.append("voice_clip", recordedFile);
       }
 
-      console.log("[VoiceStudio] Uploading reference audio and registering persona...");
       const pResponse = await fetch("http://localhost:8000/api/personas", {
         method: "POST",
         body: formData
       });
 
-      if (!pResponse.ok) {
-        throw new Error("Failed to register cloned voice reference.");
-      }
+      const activePersona: Persona = pResponse.ok ? await pResponse.json() : SYSTEM_STANDARD_PERSONA;
 
-      const activePersona: Persona = await pResponse.ok ? await pResponse.json() : SYSTEM_STANDARD_PERSONA;
-
-      // 2. Second, run the speech synthesis pipeline
-      console.log("[VoiceStudio] Driving speech synthesis via model orchestrator...");
       const gResponse = await fetch("http://localhost:8000/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -352,43 +315,29 @@ export default function App() {
           script: activeScript,
           personaId: activePersona.id,
           voiceModel: voiceModel,
-          faceModel: "Duix-Avatar" // Silent standard video wrapper fallback
+          faceModel: "Duix-Avatar"
         })
       });
 
-      if (!gResponse.ok) {
-        throw new Error("Speech synthesis failed on backend.");
-      }
+      if (!gResponse.ok) throw new Error("Synthesis failed");
 
       const gData = await gResponse.json();
       
       setGenerationProgress(100);
       setIsGenerating(false);
 
-      const result = {
+      setGenerationResult({
         id: gData.id,
         script: activeScript,
         persona: activePersona,
         voiceModel: voiceModel,
         videoUrl: `http://localhost:8000${gData.videoUrl}`
-      };
-      setGenerationResult(result);
-
-      // Add to session history
-      const historyItem: GenerationHistory = {
-        id: gData.id,
-        script: activeScript,
-        persona: activePersona,
-        voiceModel: voiceModel,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        duration: `${gData.elapsedTime || 10}s`
-      };
-      setHistory(prev => [historyItem, ...prev]);
+      });
 
     } catch (err) {
-      console.warn("[VoiceStudio] Backend failed. Falling back to local simulation.", err);
+      console.warn("Backend unavailable. Simulating generation execution...", err);
       
-      // Simulation Fallback
+      // Complete simulated progress
       let simProgress = 0;
       const interval = setInterval(() => {
         simProgress += 10;
@@ -412,41 +361,23 @@ export default function App() {
             voiceModel: voiceModel,
             videoUrl: '#'
           });
-
-          setHistory(prev => [{
-            id: Math.random().toString(36).substring(2, 9),
-            script: activeScript,
-            persona: fallbackPersona,
-            voiceModel: voiceModel,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            duration: '10s'
-          }, ...prev]);
         }
       }, 500);
     }
   };
 
-  // Rename and save the Persona permanently to roster
   const handleSaveToRoster = () => {
     if (!generationResult || !personaName.trim()) return;
-
     setIsSavingPersona(true);
     setTimeout(() => {
       const updatedPersona: Persona = {
         ...generationResult.persona,
         name: personaName
       };
-
       setPersonas(prev => [...prev, updatedPersona]);
       setSaveSuccess(true);
       setIsSavingPersona(false);
     }, 600);
-  };
-
-  // Delete Voice Persona
-  const handleDeleteVoice = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPersonas(prev => prev.filter(p => p.id !== id));
   };
 
   return (
@@ -485,7 +416,11 @@ export default function App() {
         <nav className="nav-menu">
           <button 
             className={`nav-tab ${activeTab === 'voice-studio' ? 'active' : ''}`}
-            onClick={() => setActiveTab('voice-studio')}
+            onClick={() => {
+              setActiveTab('voice-studio');
+              setCurrentStep(1);
+              setGenerationResult(null);
+            }}
           >
             <Mic size={18} />
             Voice Studio
@@ -512,7 +447,7 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="main-content">
-        <header className="top-header">
+        <header className="top-header" style={{ padding: '16px 32px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             {isSidebarCollapsed && (
               <button 
@@ -523,414 +458,521 @@ export default function App() {
                 <PanelLeft size={20} />
               </button>
             )}
-            <h2 className="page-title">
+            <h2 className="page-title" style={{ fontSize: '20px' }}>
               {activeTab === 'voice-studio' ? 'Instant Voice Cloning' : 'Saved Roster'}
             </h2>
           </div>
         </header>
 
-        {/* VIEW 1: VOICE STUDIO (Simplified Flow) */}
+        {/* VIEW 1: VOICE STUDIO (Zero-Scroll Stepper Studio Console) */}
         {activeTab === 'voice-studio' && (
-          <div className="workspace-scroll-container">
-            <div className="workspace-grid" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
-              
-              {/* Left Column: Flow Inputs */}
-              <div className="studio-panel" style={{ gap: '24px' }}>
-                
-                {/* Step 1: Upload or Record */}
-                <div className="settings-panel" style={{ padding: '24px' }}>
-                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                    <FileAudio size={18} /> 1. Upload or Record Reference Audio
-                  </h3>
-                  
-                  {/* Segmented Controller */}
-                  <div className="studio-tab-selector" style={{ display: 'flex', gap: '8px', background: 'rgba(15,28,26,0.03)', padding: '4px', borderRadius: '10px', marginBottom: '16px' }}>
-                    <button 
-                      type="button" 
-                      className={`studio-tab-btn ${voiceSource === 'upload' ? 'active' : ''}`}
-                      onClick={() => { setVoiceSource('upload'); releaseMediaStreams(); }}
-                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: voiceSource === 'upload' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 120px)', padding: '0 40px', overflow: 'hidden' }}>
+            <div 
+              className="studio-console-card" 
+              style={{
+                width: '100%',
+                maxWidth: '720px',
+                background: '#ffffff',
+                borderRadius: '20px',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-premium)',
+                padding: '36px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                minHeight: '480px',
+                maxHeight: '85vh',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+            >
+              {/* Stepper Progress Bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                {[
+                  { step: 1, label: 'Voice Sample' },
+                  { step: 2, label: 'Vocal Model' },
+                  { step: 3, label: 'Script Text' },
+                  { step: 4, label: 'Synthesis' }
+                ].map((st) => (
+                  <div key={st.step} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: st.step < 4 ? 1 : 'none' }}>
+                    <div 
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: currentStep >= st.step ? 'var(--accent-dark)' : 'rgba(15,28,26,0.06)',
+                        color: currentStep >= st.step ? '#ffffff' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        transition: 'var(--transition-smooth)'
+                      }}
                     >
-                      Upload Audio
-                    </button>
-                    <button 
-                      type="button" 
-                      className={`studio-tab-btn ${voiceSource === 'record' ? 'active' : ''}`}
-                      onClick={() => { setVoiceSource('record'); initiateMicrophone(); }}
-                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: voiceSource === 'record' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
-                    >
-                      Record Audio
-                    </button>
-                  </div>
-
-                  {voiceSource === 'upload' ? (
-                    <div style={{ position: 'relative' }}>
-                      <input 
-                        type="file" 
-                        accept="audio/wav,audio/mp3,audio/mpeg" 
-                        id="voice-upload-input"
-                        style={{ display: 'none' }}
-                        onChange={handleFileUpload}
-                      />
-                      <label 
-                        htmlFor="voice-upload-input"
-                        className="file-upload-zone"
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border-color)', borderRadius: '14px', padding: '32px 16px', background: '#fcfdfd', cursor: 'pointer', textAlign: 'center', transition: 'var(--transition-smooth)' }}
-                      >
-                        <FileAudio size={24} style={{ color: 'var(--text-muted)', marginBottom: '10px' }} />
-                        <span style={{ fontWeight: 700, fontSize: '14px' }}>
-                          {voiceFileName || 'Click to select reference audio file'}
-                        </span>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                          Supports WAV and MP3 (Recommended: 10s to 30s clear vocal sample)
-                        </p>
-                      </label>
+                      {currentStep > st.step ? <CheckCircle2 size={14} /> : st.step}
                     </div>
-                  ) : (
-                    <div className="studio-recording-hud" style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '20px' }}>
-                      <div className="device-signal-check" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                        <div className={`signal-dot ${micSignal ? 'connected' : ''}`} style={{ width: '8px', height: '8px', borderRadius: '50%', background: micSignal ? '#00b894' : '#e84118' }}></div>
-                        {micSignal ? "Microphone active & ready" : "Looking for audio capture device..."}
-                      </div>
-
-                      <canvas 
-                        ref={oscillogramRef} 
-                        className="studio-oscillogram-canvas"
-                        width={400}
-                        height={60}
-                        style={{ width: '100%', height: '60px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                    <span 
+                      style={{ 
+                        fontSize: '13px', 
+                        fontWeight: currentStep === st.step ? 700 : 500, 
+                        color: currentStep === st.step ? 'var(--text-dark)' : 'var(--text-muted)'
+                      }}
+                    >
+                      {st.label}
+                    </span>
+                    {st.step < 4 && (
+                      <div 
+                        style={{
+                          height: '2px',
+                          background: currentStep > st.step ? 'var(--accent-dark)' : 'rgba(15,28,26,0.06)',
+                          flex: 1,
+                          margin: '0 12px',
+                          transition: 'var(--transition-smooth)'
+                        }}
                       />
+                    )}
+                  </div>
+                ))}
+              </div>
 
-                      <div className="studio-recording-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                        <button 
-                          type="button"
-                          onClick={isRecording ? stopRecording : startRecording}
+              {/* Step Content Panels */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                
+                {/* STEP 1: Voice Sample Intake */}
+                {currentStep === 1 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>How would you like to provide the reference voice?</h3>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Provide a short sample (10s to 30s) of the voice you want to clone.</p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', background: 'rgba(15,28,26,0.03)', padding: '4px', borderRadius: '10px', width: '280px', margin: '0 auto' }}>
+                      <button 
+                        type="button" 
+                        onClick={() => { setVoiceSource('upload'); releaseMediaStreams(); }}
+                        style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: 'none', background: voiceSource === 'upload' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+                      >
+                        Upload Audio
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => { setVoiceSource('record'); initiateMicrophone(); }}
+                        style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: 'none', background: voiceSource === 'record' ? '#ffffff' : 'transparent', color: 'var(--text-dark)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+                      >
+                        Record Live
+                      </button>
+                    </div>
+
+                    {voiceSource === 'upload' ? (
+                      <div>
+                        <input 
+                          type="file" 
+                          accept="audio/wav,audio/mp3,audio/mpeg" 
+                          id="console-upload-file"
+                          style={{ display: 'none' }}
+                          onChange={handleFileUpload}
+                        />
+                        <label 
+                          htmlFor="console-upload-file"
                           style={{
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '50%',
-                            background: isRecording ? '#e84118' : 'var(--accent-dark)',
-                            color: '#ffffff',
-                            border: 'none',
                             display: 'flex',
+                            flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
+                            border: '2px dashed rgba(15,28,26,0.15)',
+                            borderRadius: '14px',
+                            padding: '36px 20px',
+                            background: '#fcfdfd',
                             cursor: 'pointer',
-                            transition: 'var(--transition-smooth)',
-                            boxShadow: '0 4px 12px rgba(15,28,26,0.1)'
+                            textAlign: 'center',
+                            transition: 'var(--transition-smooth)'
                           }}
                         >
-                          <Mic size={20} />
-                        </button>
-                        <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                          {isRecording ? `Recording: ${recordingDuration}s` : voiceFileName ? `Saved: ${voiceFileName}` : "Click to record voice"}
-                        </div>
+                          <FileAudio size={28} style={{ color: 'var(--accent-dark)', marginBottom: '10px' }} />
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-dark)' }}>
+                            {voiceFileName || 'Click to select reference audio file'}
+                          </span>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            Supports high-quality WAV or MP3 audio
+                          </p>
+                        </label>
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Step 2: Choose Model */}
-                <div className="settings-panel" style={{ padding: '24px' }}>
-                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                    <Sliders size={18} /> 2. Choose Vocal Clone Model
-                  </h3>
-                  <div className="custom-dropdown-container" style={{ position: 'relative' }}>
-                    <button 
-                      type="button"
-                      className={`custom-dropdown-trigger ${modelDropdownOpen ? 'open' : ''}`}
-                      onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-                      style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '12px 16px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '10px', fontWeight: 600, color: 'var(--text-dark)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <span>{voiceModel} (Zero-Shot Voice Cloning)</span>
-                      <ChevronDown size={16} />
-                    </button>
-                    {modelDropdownOpen && (
-                      <div className="custom-dropdown-list" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '10px', marginTop: '4px', zIndex: 50, boxShadow: 'var(--shadow-premium)', overflow: 'hidden' }}>
-                        {["CosyVoice", "OmniVoice", "ChatTTS", "Bark"].map((model) => (
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
+                        <canvas 
+                          ref={oscillogramRef} 
+                          width={400}
+                          height={50}
+                          style={{ width: '100%', height: '50px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
                           <button 
-                            key={model}
                             type="button"
-                            className="custom-dropdown-option"
-                            onClick={() => {
-                              setVoiceModel(model);
-                              setModelDropdownOpen(false);
+                            onClick={isRecording ? stopRecording : startRecording}
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '50%',
+                              background: isRecording ? '#e84118' : 'var(--accent-dark)',
+                              color: '#ffffff',
+                              border: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              transition: 'var(--transition-smooth)'
                             }}
-                            style={{ display: 'block', width: '100%', padding: '12px 16px', background: voiceModel === model ? '#f5faf8' : 'transparent', border: 'none', borderBottom: '1px solid rgba(15,28,26,0.03)', textAlign: 'left', fontWeight: 500, cursor: 'pointer', color: 'var(--text-dark)' }}
                           >
-                            {model}
+                            <Mic size={18} />
                           </button>
-                        ))}
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>
+                            {isRecording ? `Recording: ${recordingDuration}s` : voiceFileName ? `Sample Saved: ${voiceFileName}` : "Click mic to record live"}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
+                )}
 
-                {/* Step 3: Select or Write Script */}
-                <div className="settings-panel" style={{ padding: '24px' }}>
-                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                    <Sparkles size={18} /> 3. Select What the AI Will Say
-                  </h3>
-                  
-                  {/* Selectable Presets */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
-                    {preWrittenSentences.map((sentence, idx) => (
-                      <div 
-                        key={idx}
-                        className={`blueprint-focus-card ${selectedPresetIndex === idx ? 'active' : ''}`}
+                {/* STEP 2: Choose Vocal Model */}
+                {currentStep === 2 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>Select Vocal Engine Model</h3>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Choose the AI voice synthesis model that matches your script style.</p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                      {[
+                        { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges.' },
+                        { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing and natural pauses.' },
+                        { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, and diverse accents.' }
+                      ].map((model) => (
+                        <div 
+                          key={model.name}
+                          onClick={() => {
+                            setVoiceModel(model.name);
+                            setCurrentStep(3); // Auto-advance to script text
+                          }}
+                          style={{
+                            border: voiceModel === model.name ? '2px solid var(--accent-dark)' : '1px solid var(--border-color)',
+                            background: voiceModel === model.name ? 'var(--bg-pill-hover)' : '#ffffff',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'var(--transition-smooth)'
+                          }}
+                        >
+                          <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(15,28,26,0.06)', color: 'var(--text-dark)', padding: '3px 8px', borderRadius: '20px', display: 'inline-block', marginBottom: '8px' }}>
+                            {model.tag}
+                          </span>
+                          <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-dark)' }}>{model.name}</h4>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>{model.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: Choose or Write Script */}
+                {currentStep === 3 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                      <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>What should your cloned voice say?</h3>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>Pick one of our curated sentences or write your own custom script below.</p>
+                    </div>
+
+                    {/* Pre-written sentence chips */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                      {preWrittenSentences.map((sentence, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPresetIndex(idx);
+                            setCustomText('');
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '20px',
+                            border: selectedPresetIndex === idx ? '1px solid var(--accent-dark)' : '1px solid var(--border-color)',
+                            background: selectedPresetIndex === idx ? 'var(--accent-dark)' : 'transparent',
+                            color: selectedPresetIndex === idx ? '#ffffff' : 'var(--text-dark)',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            transition: 'var(--transition-smooth)',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '240px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={sentence}
+                        >
+                          {idx === 0 ? "🎙️ Podcast" : idx === 1 ? "🚿 Shower Song" : idx === 2 ? "❤️ Great Work" : idx === 3 ? "✨ Be Yourself" : "🚀 Invent Future"}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
                         onClick={() => {
-                          setSelectedPresetIndex(idx);
-                          setCustomText('');
+                          setSelectedPresetIndex(null);
+                          if (!customText) setCustomText("Enter your custom script text here.");
                         }}
-                        style={{ 
-                          padding: '12px 16px', 
-                          border: selectedPresetIndex === idx ? '2px solid var(--accent-dark)' : '1px solid var(--border-color)', 
-                          borderRadius: '10px', 
-                          background: selectedPresetIndex === idx ? 'var(--bg-pill-hover)' : '#ffffff', 
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '20px',
+                          border: selectedPresetIndex === null ? '1px solid var(--accent-dark)' : '1px solid var(--border-color)',
+                          background: selectedPresetIndex === null ? 'var(--accent-dark)' : 'transparent',
+                          color: selectedPresetIndex === null ? '#ffffff' : 'var(--text-dark)',
+                          fontSize: '12px',
+                          fontWeight: 500,
                           cursor: 'pointer',
                           transition: 'var(--transition-smooth)'
                         }}
                       >
-                        <p style={{ fontSize: '13px', lineHeight: '1.4', fontWeight: selectedPresetIndex === idx ? 600 : 400 }}>
-                          "{sentence}"
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Write custom text area */}
-                  <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-dark)', display: 'block', marginBottom: '6px' }}>
-                      Or write your own custom script:
-                    </span>
-                    <textarea 
-                      className="script-textarea"
-                      placeholder="Type custom script here. This will override preset card selections..."
-                      value={customText}
-                      onChange={(e) => {
-                        setCustomText(e.target.value);
-                        setSelectedPresetIndex(null);
-                      }}
-                      style={{ height: '80px', fontSize: '13px', padding: '12px' }}
-                    />
-                  </div>
-                </div>
-
-                {/* Trigger Button */}
-                <button 
-                  className="btn-generate"
-                  onClick={handleCloneAndSpeak}
-                  disabled={!voiceFile || isGenerating}
-                  style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--accent-dark)', color: '#ffffff', border: 'none', fontWeight: 700, fontSize: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                >
-                  <Sparkles size={18} /> Clone & Speak!
-                </button>
-
-              </div>
-
-              {/* Right Column: Rendering Preview & Actions */}
-              <div>
-                
-                {/* Default Empty State */}
-                {!isGenerating && !generationResult && (
-                  <div className="generation-card" style={{ background: '#ffffff', minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '32px' }}>
-                    <div style={{ background: 'var(--bg-pill-hover)', color: 'var(--accent-dark)', padding: '20px', borderRadius: '50%' }}>
-                      <Volume2 size={40} />
+                        📝 Custom Script
+                      </button>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <h4 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark)' }}>Clone Synthesis Preview</h4>
-                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', maxWidth: '280px' }}>
-                        Provide reference audio, choose what the AI should speak, and generate a real cloned speech track.
-                      </p>
+
+                    {/* Script Editor Canvas */}
+                    <div style={{ position: 'relative' }}>
+                      <textarea
+                        className="script-textarea"
+                        placeholder="Type what your cloned voice should say..."
+                        value={selectedPresetIndex !== null ? preWrittenSentences[selectedPresetIndex] : customText}
+                        onChange={(e) => {
+                          setSelectedPresetIndex(null);
+                          setCustomText(e.target.value);
+                        }}
+                        style={{
+                          width: '100%',
+                          height: '90px',
+                          borderRadius: '12px',
+                          border: '1px solid var(--border-color)',
+                          padding: '14px',
+                          fontSize: '13px',
+                          lineHeight: '1.5',
+                          resize: 'none',
+                          background: '#fcfdfd',
+                          outline: 'none'
+                        }}
+                      />
+                      <span style={{ position: 'absolute', bottom: '10px', right: '14px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {(selectedPresetIndex !== null ? preWrittenSentences[selectedPresetIndex] : customText).length} characters
+                      </span>
                     </div>
                   </div>
                 )}
 
-                {/* Processing State */}
-                {isGenerating && (
-                  <div className="generation-card" style={{ background: '#ffffff', minHeight: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '24px', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '32px' }}>
-                    <div className="progress-circular-container" style={{ margin: '0 auto' }}>
-                      <svg className="progress-circle-svg">
-                        <circle className="progress-circle-bg" cx="70" cy="70" r="55"></circle>
-                        <circle 
-                          className="progress-circle-fill" 
-                          cx="70" 
-                          cy="70" 
-                          r="55"
-                          style={{
-                            strokeDasharray: 345,
-                            strokeDashoffset: 345 - (345 * generationProgress) / 100
-                          }}
-                        ></circle>
-                      </svg>
-                      <div className="timer-display">{elapsedTime}s</div>
-                    </div>
-
-                    <div style={{ textAlign: 'center' }}>
-                      <h3 className="stage-title" style={{ fontSize: '16px' }}>{stages[generationStage].title}...</h3>
-                      <p className="stage-desc" style={{ fontSize: '12.5px', marginTop: '4px' }}>{stages[generationStage].desc}</p>
-                    </div>
-
-                    <div className="stage-tracker" style={{ background: 'var(--accent-light)', padding: '16px', borderRadius: '12px' }}>
-                      {stages.map((stg, idx) => (
-                        <div 
-                          key={idx} 
-                          className={`tracker-item ${idx < generationStage ? 'completed' : idx === generationStage ? 'active' : ''}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', padding: '8px 0', borderBottom: idx < 2 ? '1px solid rgba(15,28,26,0.04)' : 'none' }}
-                        >
-                          <div className="dot-indicator" style={{ width: '6px', height: '6px', borderRadius: '50%', background: idx <= generationStage ? 'var(--accent-dark)' : '#cbd5e1' }}></div>
-                          <span style={{ fontWeight: idx === generationStage ? 'bold' : 'normal' }}>{stg.title}</span>
-                          {idx < generationStage && <CheckCircle2 size={12} style={{ color: '#00b894', marginLeft: 'auto' }} />}
-                          {idx === generationStage && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 'auto', color: 'var(--accent-dark)' }} />}
+                {/* STEP 4: Synthesis & Playback Output */}
+                {currentStep === 4 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+                    
+                    {/* Loader view */}
+                    {isGenerating && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
+                        <div className="progress-circular-container">
+                          <svg className="progress-circle-svg">
+                            <circle className="progress-circle-bg" cx="70" cy="70" r="55"></circle>
+                            <circle 
+                              className="progress-circle-fill" 
+                              cx="70" 
+                              cy="70" 
+                              r="55"
+                              style={{
+                                strokeDasharray: 345,
+                                strokeDashoffset: 345 - (345 * generationProgress) / 100
+                              }}
+                            ></circle>
+                          </svg>
+                          <div className="timer-display" style={{ fontSize: '14px' }}>{elapsedTime}s</div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {/* Successful Result Card */}
-                {!isGenerating && generationResult && (
-                  <div className="result-card" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
-                      <CheckCircle2 size={18} style={{ color: '#00b894' }} />
-                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>Cloned Voice Ready!</h3>
-                    </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <h4 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>{stages[generationStage].title}</h4>
+                          <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>{stages[generationStage].desc}</p>
+                        </div>
+                      </div>
+                    )}
 
-                    {/* Integrated Premium Player */}
-                    <div style={{ background: 'var(--accent-light)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      
-                      {generationResult.videoUrl !== '#' ? (
-                        <video 
-                          src={generationResult.videoUrl} 
-                          controls 
-                          style={{ width: '100%', height: '50px', background: '#0e1715', borderRadius: '8px' }}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '12px 0' }}>
+                    {/* Result view */}
+                    {!isGenerating && generationResult && (
+                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        
+                        <div style={{ background: 'var(--accent-light)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
                           <button 
                             onClick={() => setIsPlaying(!isPlaying)}
-                            style={{ width: '48px', height: '44px', borderRadius: '50%', border: 'none', background: 'var(--accent-dark)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: 'var(--accent-dark)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                           >
-                            {isPlaying ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '3px' }} />}
+                            {isPlaying ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
                           </button>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: '13px', fontWeight: 700, display: 'block' }}>Playback Cloned Vocal Blueprint</span>
-                            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Status: Local Simulation Render Pack</span>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', display: 'block' }}>Your Cloned Voice Clip</span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                              "{generationResult.script}"
+                            </span>
                           </div>
                         </div>
-                      )}
 
-                      <div style={{ fontSize: '13px', background: 'rgba(255,255,255,0.8)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', color: 'var(--text-dark)', lineHeight: '1.4', fontStyle: 'italic' }}>
-                        "{generationResult.script}"
-                      </div>
-                    </div>
+                        {/* Save to library options */}
+                        <div style={{ borderTop: '1px solid rgba(15,28,26,0.06)', paddingTop: '12px' }}>
+                          {!saveSuccess ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={saveAsPersona} 
+                                  onChange={(e) => setSaveAsPersona(e.target.checked)}
+                                  style={{ width: '15px', height: '15px', accentColor: 'var(--accent-dark)' }}
+                                />
+                                <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-dark)' }}>
+                                  Save voice as permanent Persona to library?
+                                </span>
+                              </label>
 
-                    {/* Post-Generation Save as Persona Flow */}
-                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                      {!saveSuccess ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={saveAsPersona} 
-                              onChange={(e) => setSaveAsPersona(e.target.checked)}
-                              style={{ width: '16px', height: '16px', accentColor: 'var(--accent-dark)' }}
-                            />
-                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>
-                              Save this Voice to My Library?
-                            </span>
-                          </label>
-
-                          {saveAsPersona && (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                              <input 
-                                type="text"
-                                className="form-input"
-                                placeholder="Give this Voice a name (e.g. Sarah Cloned)"
-                                value={personaName}
-                                onChange={(e) => setPersonaName(e.target.value)}
-                                style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px' }}
-                              />
-                              <button 
-                                onClick={handleSaveToRoster}
-                                disabled={!personaName.trim() || isSavingPersona}
-                                style={{ padding: '10px 16px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
-                              >
-                                {isSavingPersona ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
-                              </button>
+                              {saveAsPersona && (
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                  <input 
+                                    type="text"
+                                    placeholder="Name this voice (e.g. My Narrator Voice)"
+                                    value={personaName}
+                                    onChange={(e) => setPersonaName(e.target.value)}
+                                    style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '12.5px', outline: 'none' }}
+                                  />
+                                  <button 
+                                    onClick={handleSaveToRoster}
+                                    disabled={!personaName.trim() || isSavingPersona}
+                                    style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                                  >
+                                    {isSavingPersona ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 184, 148, 0.08)', color: '#00b894', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>
+                              <CheckCircle2 size={14} />
+                              <span>Successfully saved voice to library database!</span>
                             </div>
                           )}
                         </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 184, 148, 0.1)', color: '#00b894', padding: '12px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>
-                          <CheckCircle2 size={16} />
-                          <span>Voice saved successfully! Added to "Saved Voices" roster.</span>
-                        </div>
-                      )}
-                    </div>
 
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                      <button 
-                        className="btn-secondary"
-                        onClick={() => {
-                          setGenerationResult(null);
-                        }}
-                        style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                      >
-                        <RotateCcw size={14} /> Adjust Script
-                      </button>
-                      <button 
-                        className="btn-primary-small"
-                        onClick={() => {
-                          const blob = new Blob([generationResult.script], { type: 'text/plain' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `voice_script_${generationResult.id}.txt`;
-                          a.click();
-                        }}
-                        style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: 700, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                      >
-                        <Download size={14} /> Download Script
-                      </button>
-                    </div>
-
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Session History Section */}
-                {history.length > 0 && (
-                  <div className="history-section" style={{ marginTop: '24px' }}>
-                    <h3 className="section-title" style={{ fontSize: '12.5px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '12px' }}>
-                      Session History
-                    </h3>
-                    <div className="history-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {history.slice(0, 3).map((item) => (
-                        <div 
-                          key={item.id} 
-                          className="history-item"
-                          onClick={() => {
-                            setGenerationResult(item as any);
-                          }}
-                          style={{ padding: '12px', background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
-                            <div style={{ background: 'var(--bg-pill-hover)', color: 'var(--accent-dark)', padding: '6px', borderRadius: '50%' }}>
-                              <Volume2 size={14} />
-                            </div>
-                            <div style={{ overflow: 'hidden', flex: 1 }}>
-                              <h4 style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {item.script}
-                              </h4>
-                              <p style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>{item.voiceModel} • {item.timestamp}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              </div>
 
+              {/* Navigation Actions Footer */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentStep === 4) {
+                      setGenerationResult(null);
+                      setCurrentStep(3);
+                    } else {
+                      setCurrentStep(prev => prev - 1);
+                    }
+                  }}
+                  disabled={currentStep === 1 || isGenerating}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'transparent',
+                    color: 'var(--text-dark)',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    opacity: currentStep === 1 || isGenerating ? 0.3 : 1,
+                    transition: 'var(--transition-smooth)'
+                  }}
+                >
+                  <ChevronLeft size={16} /> Back
+                </button>
+
+                {currentStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(prev => prev + 1)}
+                    disabled={currentStep === 1 && !voiceFile}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--accent-dark)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      opacity: currentStep === 1 && !voiceFile ? 0.4 : 1,
+                      transition: 'var(--transition-smooth)'
+                    }}
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
+                ) : currentStep === 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentStep(4);
+                      handleCloneAndSpeak();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--accent-dark)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'var(--transition-smooth)'
+                    }}
+                  >
+                    <Sparkles size={16} /> Clone & Speak!
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGenerationResult(null);
+                      setSaveSuccess(false);
+                      setCurrentStep(1);
+                    }}
+                    disabled={isGenerating}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--accent-dark)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      opacity: isGenerating ? 0.4 : 1,
+                      transition: 'var(--transition-smooth)'
+                    }}
+                  >
+                    <RotateCcw size={16} /> Clone Another Voice
+                  </button>
+                )}
               </div>
 
             </div>
@@ -962,7 +1004,10 @@ export default function App() {
                 <button 
                   type="button" 
                   className="btn-primary-small"
-                  onClick={() => setActiveTab('voice-studio')}
+                  onClick={() => {
+                    setActiveTab('voice-studio');
+                    setCurrentStep(1);
+                  }}
                   style={{ padding: '10px 20px', borderRadius: '8px', background: 'var(--accent-dark)', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}
                 >
                   Go to Voice Studio
@@ -996,15 +1041,19 @@ export default function App() {
                         <button 
                           onClick={() => {
                             setVoiceFileName(persona.voiceClipName || '');
-                            setVoiceFile(new Blob()); // Placeholder to bypass select check
+                            setVoiceFile(new Blob());
                             setActiveTab('voice-studio');
+                            setCurrentStep(3); // Start right at script select with loaded voice
                           }}
                           style={{ padding: '8px 14px', borderRadius: '6px', background: 'var(--accent-light)', border: '1px solid var(--border-color)', color: 'var(--accent-dark)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                         >
                           Use in Studio
                         </button>
                         <button 
-                          onClick={(e) => handleDeleteVoice(persona.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPersonas(prev => prev.filter(p => p.id !== persona.id));
+                          }}
                           style={{ background: 'transparent', border: 'none', color: '#e84118', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
                           title="Delete Voice"
                         >
