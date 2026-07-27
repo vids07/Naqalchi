@@ -164,3 +164,40 @@ The logo is drawn using a high-fidelity vector path combining a spade-shaped org
 </svg>
 ```
 
+---
+
+## 7. Scalable Split Model Selection Layout
+
+To prevent UI breakage or horizontal scrolling when adding an arbitrary number of AI models, **Step 2 (Select Vocal Model)** implements a split-pane dashboard:
+
+* **Left Panel (45% Width - Scrollable Index):**
+  * Includes a compact real-time Search Box (`Search` icon, size `13px`) utilizing a pale `#fcfdfd` background and thin border.
+  * Models are rendered as slim vertical rows inside a scrollable container (`maxHeight: '210px'`, `overflowY: 'auto'`).
+  * Row layout: A standard radio bubble indicator on the left, the Model Name (strictly using **Outfit** / `var(--font-title)` with a font weight of `700`), and its category tag on the far right.
+* **Right Panel (55% Width - Engine Intelligence Card):**
+  * Generates an asynchronous summary using background color `var(--accent-light)`.
+  * Renders details of the selected model including a description, visual bar graphs for performance attributes (**Synthesis Speed**, **Audio Naturalness**), and standard expected latency statistics.
+
+---
+
+## 8. Stateful Three-Stage Voice Recording Layout
+
+The live voice recording layout (Step 1) is structured as a **three-stage state machine** to ensure clean, clutter-free interactions:
+
+1. **Stage 1: Idle (Ready to Record):**
+   * Displays a clean panel with a centered `Mic` trigger button (size `56px`, background `var(--accent-dark)`, visual box-shadow `0 4px 14px rgba(60, 92, 86, 0.25)`).
+   * Accompanied by descriptive helper subtitles outlining recommended recording guidelines.
+2. **Stage 2: Active Recording:**
+   * Displays the responsive HTML5 canvas oscillogram reacting directly to user pitch.
+   * Renders a dedicated stop action button alongside an active red recording badge (`Recording: Xs`).
+3. **Stage 3: Completed (Captured Recording Success Card):**
+   * Replaces the active recording console with a solid, sleek flex preview card utilizing `var(--accent-light)` background.
+   * Renders an integrated circular Play/Pause button on the left (creating a transient object URL from the captured binary `Blob`), the file metadata in the center, and a hover-reactive red trash button on the far right.
+   * Clearing or discarding the recording strictly revokes memory-linked object URLs to prevent browser-level resource leaks.
+
+### 8.1 Required Safety Consent Verification
+To satisfy Google API safety specifications, a secondary **Consent Verification Recording Card** is unlocked automatically below the voice reference sample card *only* when `voiceFile` is successfully verified:
+* **The Consent Statement:**
+  > *"I am the owner of this voice and I consent to Google using this voice to create a synthetic voice model."*
+* Renders utilizing the identical premium three-stage state machine (Idle, Active, and Completed with playback-preview & discard actions).
+* **Progression Restriction:** The wizard's "Next" button is strictly locked (`disabled`) on Step 1 until both a valid `voiceFile` AND a validated `consentFile` are completely recorded/provided by the user.

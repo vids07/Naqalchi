@@ -14,7 +14,8 @@ import {
   Pause,
   ChevronRight,
   ChevronLeft,
-  Search
+  Search,
+  ShieldCheck
 } from 'lucide-react';
 
 interface Persona {
@@ -65,6 +66,12 @@ export default function App() {
   // Recording State
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
+
+  // Consent Recording State
+  const [consentFile, setConsentFile] = useState<File | Blob | null>(null);
+  const [consentFileName, setConsentFileName] = useState<string>('');
+  const [isRecordingConsent, setIsRecordingConsent] = useState<boolean>(false);
+  const [consentDuration, setConsentDuration] = useState<number>(0);
 
   // Step 2 State: Voice Model selection
   const [voiceModel, setVoiceModel] = useState<string>('CosyVoice');
@@ -127,6 +134,17 @@ export default function App() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string>('');
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState<boolean>(false);
+  const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const consentMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const consentRecordedChunksRef = useRef<Blob[]>([]);
+  const [consentAudioUrl, setConsentAudioUrl] = useState<string>('');
+  const [isConsentPlaybackPlaying, setIsConsentPlaybackPlaying] = useState<boolean>(false);
+  const consentPlaybackAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Audio Playback
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -141,6 +159,17 @@ export default function App() {
     }
     return () => clearInterval(timer);
   }, [isRecording]);
+
+  // Consent Recording timer tracker
+  useEffect(() => {
+    let timer: any;
+    if (isRecordingConsent) {
+      timer = setInterval(() => {
+        setConsentDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isRecordingConsent]);
 
   // Handle generation ticks
   useEffect(() => {
@@ -168,8 +197,61 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
+  const stopPlayback = () => {
+    if (playbackAudioRef.current) {
+      playbackAudioRef.current.pause();
+      playbackAudioRef.current = null;
+    }
+    setIsPlaybackPlaying(false);
+  };
+
+  const togglePlayback = () => {
+    if (!recordedAudioUrl) return;
+    if (isPlaybackPlaying) {
+      if (playbackAudioRef.current) {
+        playbackAudioRef.current.pause();
+      }
+      setIsPlaybackPlaying(false);
+    } else {
+      if (playbackAudioRef.current) {
+        playbackAudioRef.current.play().then(() => {
+          setIsPlaybackPlaying(true);
+        }).catch(err => console.error("Playback failed", err));
+      } else {
+        const audio = new Audio(recordedAudioUrl);
+        audio.onended = () => {
+          setIsPlaybackPlaying(false);
+        };
+        playbackAudioRef.current = audio;
+        audio.play().then(() => {
+          setIsPlaybackPlaying(true);
+        }).catch(err => console.error("Playback failed", err));
+      }
+    }
+  };
+
+  const discardRecording = () => {
+    stopPlayback();
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+      setRecordedAudioUrl('');
+    }
+    setVoiceFile(null);
+    setVoiceFileName('');
+  };
+
   // Clean up recording context
   const releaseMediaStreams = () => {
+    stopPlayback();
+    stopConsentPlayback();
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+      setRecordedAudioUrl('');
+    }
+    if (consentAudioUrl) {
+      URL.revokeObjectURL(consentAudioUrl);
+      setConsentAudioUrl('');
+    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
@@ -181,6 +263,108 @@ export default function App() {
       audioContextRef.current = null;
     }
     analyserRef.current = null;
+  };
+
+  const stopConsentPlayback = () => {
+    if (consentPlaybackAudioRef.current) {
+      consentPlaybackAudioRef.current.pause();
+      consentPlaybackAudioRef.current = null;
+    }
+    setIsConsentPlaybackPlaying(false);
+  };
+
+  const toggleConsentPlayback = () => {
+    if (!consentAudioUrl) return;
+    if (isConsentPlaybackPlaying) {
+      if (consentPlaybackAudioRef.current) {
+        consentPlaybackAudioRef.current.pause();
+      }
+      setIsConsentPlaybackPlaying(false);
+    } else {
+      if (consentPlaybackAudioRef.current) {
+        consentPlaybackAudioRef.current.play().then(() => {
+          setIsConsentPlaybackPlaying(true);
+        }).catch(err => console.error("Consent playback failed", err));
+      } else {
+        const audio = new Audio(consentAudioUrl);
+        audio.onended = () => {
+          setIsConsentPlaybackPlaying(false);
+        };
+        consentPlaybackAudioRef.current = audio;
+        audio.play().then(() => {
+          setIsConsentPlaybackPlaying(true);
+        }).catch(err => console.error("Consent playback failed", err));
+      }
+    }
+  };
+
+  const discardConsentRecording = () => {
+    stopConsentPlayback();
+    if (consentAudioUrl) {
+      URL.revokeObjectURL(consentAudioUrl);
+      setConsentAudioUrl('');
+    }
+    setConsentFile(null);
+    setConsentFileName('');
+  };
+
+  const startConsentRecording = () => {
+    if (!mediaStreamRef.current) {
+      initiateMicrophone().then(() => {
+        if (mediaStreamRef.current) {
+          startConsentMediaRecorder();
+        }
+      });
+    } else {
+      startConsentMediaRecorder();
+    }
+  };
+
+  const startConsentMediaRecorder = () => {
+    if (!mediaStreamRef.current) return;
+    consentRecordedChunksRef.current = [];
+    try {
+      const options = { mimeType: 'audio/webm' };
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(mediaStreamRef.current, options);
+      } catch (e) {
+        recorder = new MediaRecorder(mediaStreamRef.current);
+      }
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          consentRecordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const recordedBlob = new Blob(consentRecordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        setConsentFile(recordedBlob);
+        const fileName = `recorded_consent_${Math.floor(Math.random() * 900) + 100}.wav`;
+        setConsentFileName(fileName);
+
+        if (consentAudioUrl) {
+          URL.revokeObjectURL(consentAudioUrl);
+        }
+        const url = URL.createObjectURL(recordedBlob);
+        setConsentAudioUrl(url);
+      };
+
+      consentMediaRecorderRef.current = recorder;
+      recorder.start(250);
+      setIsRecordingConsent(true);
+      setConsentDuration(0);
+    } catch (err) {
+      console.error("Failed to start Consent MediaRecorder", err);
+    }
+  };
+
+  const stopConsentRecording = () => {
+    if (consentMediaRecorderRef.current && consentMediaRecorderRef.current.state !== 'inactive') {
+      consentMediaRecorderRef.current.stop();
+    }
+    setIsRecordingConsent(false);
   };
 
   const initiateMicrophone = async () => {
@@ -205,15 +389,62 @@ export default function App() {
   };
 
   const startRecording = () => {
-    setIsRecording(true);
-    setRecordingDuration(0);
+    if (!mediaStreamRef.current) {
+      initiateMicrophone().then(() => {
+        if (mediaStreamRef.current) {
+          startMediaRecorder();
+        }
+      });
+    } else {
+      startMediaRecorder();
+    }
+  };
+
+  const startMediaRecorder = () => {
+    if (!mediaStreamRef.current) return;
+    recordedChunksRef.current = [];
+    try {
+      const options = { mimeType: 'audio/webm' };
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(mediaStreamRef.current, options);
+      } catch (e) {
+        recorder = new MediaRecorder(mediaStreamRef.current);
+      }
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const recordedBlob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        setVoiceFile(recordedBlob);
+        const fileName = `recorded_vocal_${Math.floor(Math.random() * 900) + 100}.wav`;
+        setVoiceFileName(fileName);
+
+        if (recordedAudioUrl) {
+          URL.revokeObjectURL(recordedAudioUrl);
+        }
+        const url = URL.createObjectURL(recordedBlob);
+        setRecordedAudioUrl(url);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+      setIsRecording(true);
+      setRecordingDuration(0);
+    } catch (err) {
+      console.error("Failed to start MediaRecorder", err);
+    }
   };
 
   const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
-    const mockBlob = new Blob([new Uint8Array(44100 * 2)], { type: 'audio/wav' });
-    setVoiceFile(mockBlob);
-    setVoiceFileName(`recorded_vocal_${Math.floor(Math.random() * 900) + 100}.wav`);
   };
 
   // Waveform canvas rendering
@@ -685,43 +916,92 @@ export default function App() {
                         )}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
-                        <canvas 
-                          ref={oscillogramRef} 
-                          width={400}
-                          height={50}
-                          style={{ width: '100%', height: '50px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                          <button 
-                            type="button"
-                            onClick={isRecording ? stopRecording : startRecording}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {isRecording ? (
+                          /* Stage 1: Active Recording with Oscillogram */
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
+                            <canvas 
+                              ref={oscillogramRef} 
+                              width={400}
+                              height={50}
+                              style={{ width: '100%', height: '50px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                              <button 
+                                type="button"
+                                onClick={stopRecording}
+                                style={{
+                                  width: '40px',
+                                  height: '40px',
+                                  borderRadius: '50%',
+                                  background: '#e84118',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  transition: 'var(--transition-smooth)'
+                                }}
+                                title="Stop Recording"
+                              >
+                                <div style={{ width: '12px', height: '12px', background: '#ffffff', borderRadius: '2px' }} />
+                              </button>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#e84118' }}>
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e84118' }} />
+                                Recording: {recordingDuration}s
+                              </div>
+                            </div>
+                          </div>
+                        ) : voiceFileName ? (
+                          /* Stage 2: Captured Recording with Playback & Delete */
+                          <div 
                             style={{
-                              width: '40px',
-                              height: '40px',
-                              borderRadius: '50%',
-                              background: isRecording ? '#e84118' : 'var(--accent-dark)',
-                              color: '#ffffff',
-                              border: 'none',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
+                              justifyContent: 'space-between',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '14px',
+                              padding: '16px 20px',
+                              background: 'var(--accent-light)',
+                              boxShadow: '0 2px 8px rgba(15, 28, 26, 0.02)',
                               transition: 'var(--transition-smooth)'
                             }}
                           >
-                            <Mic size={18} />
-                          </button>
-                          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>
-                            {isRecording ? `Recording: ${recordingDuration}s` : voiceFileName ? `Sample Saved: ${voiceFileName}` : "Click mic to record live"}
-                          </div>
-                          {!isRecording && voiceFileName && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <button
+                                type="button"
+                                onClick={togglePlayback}
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '50%',
+                                  background: 'var(--bg-pill-active)',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: 'var(--accent-dark)',
+                                  cursor: 'pointer',
+                                  paddingLeft: isPlaybackPlaying ? '0px' : '2px',
+                                  transition: 'var(--transition-smooth)'
+                                }}
+                                title={isPlaybackPlaying ? "Pause Playback" : "Play Recording"}
+                              >
+                                {isPlaybackPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                              </button>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '13px', color: 'var(--text-dark)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
+                                  {voiceFileName}
+                                </span>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  Recording captured successfully • {recordingDuration}s
+                                </span>
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => {
-                                setVoiceFile(null);
-                                setVoiceFileName('');
-                              }}
+                              onClick={discardRecording}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -729,16 +1009,233 @@ export default function App() {
                                 width: '32px',
                                 height: '32px',
                                 borderRadius: '50%',
-                                border: '1px solid rgba(232, 65, 24, 0.2)',
+                                border: '1px solid rgba(232, 65, 24, 0.1)',
                                 background: 'rgba(232, 65, 24, 0.04)',
                                 color: '#e84118',
                                 cursor: 'pointer',
-                                transition: 'var(--transition-smooth)'
+                                transition: 'all 0.2s ease'
                               }}
-                              title="Discard Recording"
+                              title="Delete recording"
                             >
                               <Trash2 size={14} />
                             </button>
+                          </div>
+                        ) : (
+                          /* Stage 3: Ready to Record State (Idle) */
+                          <div 
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '14px',
+                              padding: '30px 20px',
+                              background: '#fcfdfd',
+                              textAlign: 'center'
+                            }}
+                          >
+                            <button 
+                              type="button"
+                              onClick={startRecording}
+                              style={{
+                                width: '56px',
+                                height: '56px',
+                                borderRadius: '50%',
+                                background: 'var(--accent-dark)',
+                                color: '#ffffff',
+                                border: 'none',
+                                display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  marginBottom: '12px',
+                                  transition: 'var(--transition-smooth)',
+                                  boxShadow: '0 4px 14px rgba(60, 92, 86, 0.25)'
+                                }}
+                                title="Start Recording"
+                              >
+                                <Mic size={24} />
+                              </button>
+                              <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-dark)' }}>
+                                Ready to record reference voice
+                              </span>
+                              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4', whiteSpace: 'nowrap' }}>
+                                Speak clearly into your microphone. Recommended length is 10 to 30 seconds.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    {voiceFile && (
+                      <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                          <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                            <ShieldCheck size={16} style={{ color: 'var(--accent-dark)' }} /> Legal Consent Verification
+                          </h4>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', maxWidth: '440px', margin: '2px auto 0' }}>
+                            Google TTS/Safety Verification requires the speaker to read the following statement aloud to verify consent.
+                          </p>
+                        </div>
+
+                        {/* Specific Consent Text Displayed with high emphasis */}
+                        <div style={{
+                          background: 'rgba(60, 92, 86, 0.04)',
+                          border: '1px dashed var(--border-color)',
+                          borderRadius: '10px',
+                          padding: '12px 16px',
+                          textAlign: 'center'
+                        }}>
+                          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 600 }}>Please read the sentence below:</span>
+                          <p style={{ fontFamily: 'var(--font-title)', fontSize: '14px', fontWeight: 600, color: 'var(--text-dark)', marginTop: '6px', fontStyle: 'italic', lineHeight: '1.4' }}>
+                            "I am the owner of this voice and I consent to Google using this voice to create a synthetic voice model."
+                          </p>
+                        </div>
+
+                        {/* Consent Recording 3-Stage Component */}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          {isRecordingConsent ? (
+                            /* Stage 1: Active Consent Recording */
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                                <button 
+                                  type="button"
+                                  onClick={stopConsentRecording}
+                                  style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    background: '#e84118',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'var(--transition-smooth)'
+                                  }}
+                                  title="Stop Consent Recording"
+                                >
+                                  <div style={{ width: '12px', height: '12px', background: '#ffffff', borderRadius: '2px' }} />
+                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#e84118' }}>
+                                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e84118' }} />
+                                  Recording Consent: {consentDuration}s
+                                </div>
+                              </div>
+                            </div>
+                          ) : consentFileName ? (
+                            /* Stage 2: Captured Consent Preview */
+                            <div 
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '14px',
+                                padding: '12px 18px',
+                                background: 'var(--accent-light)',
+                                boxShadow: '0 2px 8px rgba(15, 28, 26, 0.02)',
+                                transition: 'var(--transition-smooth)'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <button
+                                  type="button"
+                                  onClick={toggleConsentPlayback}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '50%',
+                                    background: 'var(--bg-pill-active)',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--accent-dark)',
+                                    cursor: 'pointer',
+                                    paddingLeft: isConsentPlaybackPlaying ? '0px' : '2px',
+                                    transition: 'var(--transition-smooth)'
+                                  }}
+                                  title={isConsentPlaybackPlaying ? "Pause Consent Playback" : "Play Consent Recording"}
+                                >
+                                  {isConsentPlaybackPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                  <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '12px', color: 'var(--text-dark)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
+                                    Consent Verified ({consentFileName})
+                                  </span>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                    Duration: {consentDuration}s • Ready for Google safety verification
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={discardConsentRecording}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '50%',
+                                  border: '1px solid rgba(232, 65, 24, 0.1)',
+                                  background: 'rgba(232, 65, 24, 0.04)',
+                                  color: '#e84118',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease'
+                                }}
+                                title="Delete consent recording"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            /* Stage 3: Idle */
+                            <div 
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '14px',
+                                padding: '20px',
+                                background: '#fcfdfd',
+                                textAlign: 'center'
+                              }}
+                            >
+                              <button 
+                                type="button"
+                                onClick={startConsentRecording}
+                                style={{
+                                  width: '44px',
+                                  height: '44px',
+                                  borderRadius: '50%',
+                                  background: 'var(--accent-dark)',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  marginBottom: '8px',
+                                  transition: 'var(--transition-smooth)',
+                                  boxShadow: '0 3px 10px rgba(60, 92, 86, 0.2)'
+                                }}
+                                title="Start Consent Recording"
+                              >
+                                <Mic size={18} />
+                              </button>
+                              <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-dark)' }}>
+                                Click to record your consent
+                              </span>
+                              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                Ensure your recording matches the exact sentence above.
+                              </p>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1112,7 +1609,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCurrentStep(prev => prev + 1)}
-                    disabled={currentStep === 1 && !voiceFile}
+                    disabled={currentStep === 1 && (!voiceFile || !consentFile)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1125,7 +1622,7 @@ export default function App() {
                       fontWeight: 700,
                       fontSize: '13px',
                       cursor: 'pointer',
-                      opacity: currentStep === 1 && !voiceFile ? 0.4 : 1,
+                      opacity: currentStep === 1 && (!voiceFile || !consentFile) ? 0.4 : 1,
                       transition: 'var(--transition-smooth)'
                     }}
                   >
