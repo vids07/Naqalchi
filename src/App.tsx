@@ -13,7 +13,8 @@ import {
   Play,
   Pause,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Search
 } from 'lucide-react';
 
 interface Persona {
@@ -67,6 +68,7 @@ export default function App() {
 
   // Step 2 State: Voice Model selection
   const [voiceModel, setVoiceModel] = useState<string>('CosyVoice');
+  const [modelSearch, setModelSearch] = useState<string>('');
 
   // Step 3 State: Sentences / Input
   const preWrittenSentences = [
@@ -459,9 +461,9 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="main-content">
-        <header className="top-header" style={{ padding: '16px 32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {isSidebarCollapsed && (
+        {isSidebarCollapsed && (
+          <header className="top-header" style={{ padding: '12px 32px', height: '48px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button 
                 className="btn-expand-sidebar"
                 onClick={() => setIsSidebarCollapsed(false)}
@@ -469,14 +471,14 @@ export default function App() {
               >
                 <PanelLeft size={20} />
               </button>
-            )}
-          </div>
-        </header>
+            </div>
+          </header>
+        )}
 
         {/* VIEW 1: VOICE STUDIO (Zero-Scroll Stepper Studio Console) */}
         {activeTab === 'voice-studio' && (
           <div className="persona-admin-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div className="persona-admin-header" style={{ marginBottom: '28px' }}>
+            <div className="persona-admin-header" style={{ marginBottom: '64px' }}>
               <div>
                 <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Instant Voice Cloning</h2>
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -585,7 +587,7 @@ export default function App() {
                     </div>
 
                     {voiceSource === 'upload' ? (
-                      <div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <input 
                           type="file" 
                           accept="audio/wav,audio/mp3,audio/mpeg" 
@@ -593,30 +595,94 @@ export default function App() {
                           style={{ display: 'none' }}
                           onChange={handleFileUpload}
                         />
-                        <label 
-                          htmlFor="console-upload-file"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            border: '2px dashed rgba(15,28,26,0.15)',
-                            borderRadius: '14px',
-                            padding: '36px 20px',
-                            background: '#fcfdfd',
-                            cursor: 'pointer',
-                            textAlign: 'center',
-                            transition: 'var(--transition-smooth)'
-                          }}
-                        >
-                          <FileAudio size={28} style={{ color: 'var(--accent-dark)', marginBottom: '10px' }} />
-                          <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-dark)' }}>
-                            {voiceFileName || 'Click to select reference audio file'}
-                          </span>
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                            Supports high-quality WAV or MP3 audio
-                          </p>
-                        </label>
+                        {voiceFileName ? (
+                          <div 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '14px',
+                              padding: '16px 20px',
+                              background: 'var(--accent-light)',
+                              boxShadow: '0 2px 8px rgba(15, 28, 26, 0.02)',
+                              transition: 'var(--transition-smooth)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '8px',
+                                background: 'var(--bg-pill-active)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--accent-dark)'
+                              }}>
+                                <FileAudio size={18} />
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-dark)', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {voiceFileName}
+                                </span>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  Reference file loaded successfully
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVoiceFile(null);
+                                setVoiceFileName('');
+                                const fileInput = document.getElementById('console-upload-file') as HTMLInputElement;
+                                if (fileInput) fileInput.value = '';
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                border: '1px solid rgba(232, 65, 24, 0.1)',
+                                background: 'rgba(232, 65, 24, 0.04)',
+                                color: '#e84118',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                              }}
+                              title="Delete reference file"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label 
+                            htmlFor="console-upload-file"
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: '2px dashed rgba(15,28,26,0.15)',
+                              borderRadius: '14px',
+                              padding: '36px 20px',
+                              background: '#fcfdfd',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              transition: 'var(--transition-smooth)'
+                            }}
+                          >
+                            <FileAudio size={28} style={{ color: 'var(--accent-dark)', marginBottom: '10px' }} />
+                            <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-dark)' }}>
+                              Click to select reference audio file
+                            </span>
+                            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              Supports high-quality WAV or MP3 audio
+                            </p>
+                          </label>
+                        )}
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
@@ -649,6 +715,31 @@ export default function App() {
                           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>
                             {isRecording ? `Recording: ${recordingDuration}s` : voiceFileName ? `Sample Saved: ${voiceFileName}` : "Click mic to record live"}
                           </div>
+                          {!isRecording && voiceFileName && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVoiceFile(null);
+                                setVoiceFileName('');
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                border: '1px solid rgba(232, 65, 24, 0.2)',
+                                background: 'rgba(232, 65, 24, 0.04)',
+                                color: '#e84118',
+                                cursor: 'pointer',
+                                transition: 'var(--transition-smooth)'
+                              }}
+                              title="Discard Recording"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -663,35 +754,134 @@ export default function App() {
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>Choose the AI voice synthesis model that matches your script style.</p>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                      {[
-                        { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges.' },
-                        { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing and natural pauses.' },
-                        { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, and diverse accents.' }
-                      ].map((model) => (
-                        <div 
-                          key={model.name}
-                          onClick={() => {
-                            setVoiceModel(model.name);
-                            setCurrentStep(3); // Auto-advance to script text
-                          }}
-                          style={{
-                            border: voiceModel === model.name ? '2px solid var(--accent-dark)' : '1px solid var(--border-color)',
-                            background: voiceModel === model.name ? 'var(--bg-pill-hover)' : '#ffffff',
-                            borderRadius: '12px',
-                            padding: '16px',
-                            cursor: 'pointer',
-                            textAlign: 'center',
-                            transition: 'var(--transition-smooth)'
-                          }}
-                        >
-                          <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(15,28,26,0.06)', color: 'var(--text-dark)', padding: '3px 8px', borderRadius: '20px', display: 'inline-block', marginBottom: '8px' }}>
-                            {model.tag}
-                          </span>
-                          <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '14px', fontWeight: 700, color: 'var(--text-dark)' }}>{model.name}</h4>
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>{model.desc}</p>
+                    <div style={{ display: 'flex', gap: '20px', minHeight: '260px' }}>
+                      {/* Left: Scrollable List Panel with Search */}
+                      <div style={{ flex: '1 1 45%', display: 'flex', flexDirection: 'column', gap: '10px', borderRight: '1px solid var(--border-color)', paddingRight: '16px' }}>
+                        {/* Compact Search Box */}
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            placeholder="Search vocal engines..." 
+                            value={modelSearch}
+                            onChange={(e) => setModelSearch(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px 8px 30px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              background: '#fcfdfd',
+                              fontSize: '12px',
+                              outline: 'none',
+                              color: 'var(--text-dark)'
+                            }}
+                          />
+                          <Search size={13} style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)' }} />
                         </div>
-                      ))}
+
+                        {/* Model Scrollable Rows */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', maxHeight: '210px', paddingRight: '4px' }}>
+                          {[
+                            { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges and perfect emotional inflection.', speed: 92, naturalness: 98, latency: 'Low (0.8s)' },
+                            { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing, natural pauses, laughter, and realistic speaking rhythm.', speed: 96, naturalness: 93, latency: 'Ultra-Low (0.4s)' },
+                            { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, background music integration, and highly diverse global accents.', speed: 75, naturalness: 91, latency: 'Medium (1.5s)' },
+                            { name: 'VITS-Naqal', tag: '📈 Classical', desc: 'Stable, lightweight neural architecture optimized for rapid bulk generation and standard corporate narrations.', speed: 98, naturalness: 82, latency: 'Instant (0.2s)' },
+                            { name: 'XTTS-v2', tag: '🌍 Multilingual', desc: 'Enterprise grade translation cloning supporting over 17 international languages with pitch-perfect accent replication.', speed: 84, naturalness: 95, latency: 'Low (0.9s)' }
+                          ]
+                            .filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase()) || m.tag.toLowerCase().includes(modelSearch.toLowerCase()))
+                            .map((model) => (
+                              <div 
+                                key={model.name}
+                                onClick={() => setVoiceModel(model.name)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '10px 12px',
+                                  borderRadius: '8px',
+                                  border: voiceModel === model.name ? '1.5px solid var(--accent-dark)' : '1px solid var(--border-color)',
+                                  background: voiceModel === model.name ? 'var(--bg-pill-hover)' : '#ffffff',
+                                  cursor: 'pointer',
+                                  transition: 'var(--transition-smooth)'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '50%',
+                                    border: voiceModel === model.name ? '4px solid var(--accent-dark)' : '1.5px solid var(--border-color)',
+                                    background: '#ffffff',
+                                    transition: 'var(--transition-smooth)'
+                                  }} />
+                                  <span style={{ fontFamily: 'var(--font-title)', fontSize: '13px', fontWeight: '700', color: 'var(--text-dark)', letterSpacing: '-0.01em' }}>
+                                    {model.name}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: '9px', fontWeight: 700, background: 'rgba(15,28,26,0.06)', color: 'var(--text-dark)', padding: '2px 6px', borderRadius: '20px' }}>
+                                  {model.tag}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+
+                      {/* Right: Rich Engine Intelligence Panel */}
+                      <div style={{ flex: '1 1 55%', display: 'flex', flexDirection: 'column', background: 'var(--accent-light)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border-color)' }}>
+                        {(() => {
+                          const modelsList = [
+                            { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges and perfect emotional inflection.', speed: 92, naturalness: 98, latency: 'Low (0.8s)' },
+                            { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing, natural pauses, laughter, and realistic speaking rhythm.', speed: 96, naturalness: 93, latency: 'Ultra-Low (0.4s)' },
+                            { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, background music integration, and highly diverse global accents.', speed: 75, naturalness: 91, latency: 'Medium (1.5s)' },
+                            { name: 'VITS-Naqal', tag: '📈 Classical', desc: 'Stable, lightweight neural architecture optimized for rapid bulk generation and standard corporate narrations.', speed: 98, naturalness: 82, latency: 'Instant (0.2s)' },
+                            { name: 'XTTS-v2', tag: '🌍 Multilingual', desc: 'Enterprise grade translation cloning supporting over 17 international languages with pitch-perfect accent replication.', speed: 84, naturalness: 95, latency: 'Low (0.9s)' }
+                          ];
+                          const activeModel = modelsList.find(m => m.name === voiceModel) || modelsList[0];
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '10px' }}>
+                                <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>
+                                  {activeModel.name}
+                                </h4>
+                                <span style={{ fontSize: '9px', fontWeight: 700, background: 'var(--bg-pill-active)', color: 'var(--text-dark)', padding: '2px 6px', borderRadius: '20px' }}>
+                                  {activeModel.tag}
+                                </span>
+                              </div>
+
+                              <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', flexGrow: 1, minHeight: '44px', margin: 0 }}>
+                                {activeModel.desc}
+                              </p>
+
+                              {/* Parameter Performance Metrics */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', background: '#ffffff', borderRadius: '8px', padding: '10px', border: '1px solid var(--border-color)' }}>
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 600, color: 'var(--text-dark)', marginBottom: '3px' }}>
+                                    <span>Synthesis Speed</span>
+                                    <span>{activeModel.speed}%</span>
+                                  </div>
+                                  <div style={{ width: '100%', height: '4px', background: 'rgba(15,28,26,0.06)', borderRadius: '10px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${activeModel.speed}%`, height: '100%', background: 'var(--accent-dark)', borderRadius: '10px', transition: 'width 0.3s ease' }} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 600, color: 'var(--text-dark)', marginBottom: '3px' }}>
+                                    <span>Audio Naturalness</span>
+                                    <span>{activeModel.naturalness}%</span>
+                                  </div>
+                                  <div style={{ width: '100%', height: '4px', background: 'rgba(15,28,26,0.06)', borderRadius: '10px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${activeModel.naturalness}%`, height: '100%', background: 'var(--accent-dark)', borderRadius: '10px', transition: 'width 0.3s ease' }} />
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 600, color: 'var(--text-dark)', paddingTop: '4px', borderTop: '1px solid rgba(15,28,26,0.04)' }}>
+                                  <span>Engine Latency</span>
+                                  <span style={{ color: 'var(--accent-dark)' }}>{activeModel.latency}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1003,7 +1193,7 @@ export default function App() {
         {/* VIEW 2: SAVED VOICES / ROSTER */}
         {activeTab === 'saved-voices' && (
           <div className="persona-admin-container">
-            <div className="persona-admin-header">
+            <div className="persona-admin-header" style={{ marginBottom: '64px' }}>
               <div>
                 <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Manage Team Personas</h2>
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>

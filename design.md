@@ -55,7 +55,7 @@ Both the **Voice Studio** and **Manage Team Personas** views must utilize the id
 ```typescript
 // Symmetrical Page Layout Wrapper
 <div className="persona-admin-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-  <div className="persona-admin-header" style={{ marginBottom: '28px' }}>
+  <div className="persona-admin-header" style={{ marginBottom: '64px' }}>
     <div>
       <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700', color: 'var(--text-dark)' }}>
         [Page Title Here]
