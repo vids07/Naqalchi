@@ -96,6 +96,31 @@ async def generate_content(request: GenerationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation pipeline failed: {str(e)}")
 
+@router.post("/voice/synthesize")
+async def synthesize_voice(
+    reference_audio: UploadFile = File(...),
+    text: str = Form(...)
+):
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text content cannot be empty")
+        
+    try:
+        ref_bytes = await reference_audio.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read reference audio: {str(e)}")
+        
+    try:
+        import modal
+        clone_voice = modal.Function.from_name("naqalchi-omnivoice", "clone_voice")
+        out_bytes = clone_voice.remote(text=text, ref_audio_bytes=ref_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Voice synthesis via Modal GPU failed: {str(e)}")
+        
+    return StreamingResponse(io.BytesIO(out_bytes), media_type="audio/wav")
+
 @router.post("/personas/generate-voice-key")
 async def generate_voice_key(
     reference_audio: UploadFile = File(...),
