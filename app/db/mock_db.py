@@ -9,6 +9,7 @@ class Persona(BaseModel):
     avatarUrl: Optional[str] = None
     voiceClipName: Optional[str] = None
     faceClipName: Optional[str] = None
+    previewClipName: Optional[str] = None
 
 class Job(BaseModel):
     id: str

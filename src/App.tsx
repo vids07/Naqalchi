@@ -628,18 +628,49 @@ export default function App() {
     }
   };
 
-  const handleSaveToRoster = () => {
+  const handleSaveToRoster = async () => {
     if (!generationResult || !personaName.trim()) return;
     setIsSavingPersona(true);
-    setTimeout(() => {
-      const updatedPersona: Persona = {
-        ...generationResult.persona,
-        name: personaName
-      };
-      setPersonas(prev => [...prev, updatedPersona]);
+    try {
+      const formData = new FormData();
+      formData.append("name", personaName);
+
+      // 1. Append original reference voice clip
+      if (voiceFile instanceof File) {
+        formData.append("voice_clip", voiceFile);
+      } else if (voiceFile) {
+        const recordedFile = new File([voiceFile], voiceFileName || "recorded_vocal.wav", { type: "audio/wav" });
+        formData.append("voice_clip", recordedFile);
+      }
+
+      // 2. Fetch the generated audio blob and append as preview.wav
+      if (generationResult.audioUrl) {
+        const audioRes = await fetch(generationResult.audioUrl);
+        const audioBlob = await audioRes.blob();
+        const previewFile = new File([audioBlob], "preview.wav", { type: "audio/wav" });
+        formData.append("preview_clip", previewFile);
+      }
+
+      const response = await fetch("http://localhost:8000/api/personas", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+
+      const savedPersona: Persona = await response.json();
+
+      // 3. Update local personas roster state with backend response
+      setPersonas(prev => [...prev, savedPersona]);
       setSaveSuccess(true);
+    } catch (err) {
+      console.error("Failed to save persona:", err);
+      alert(`Failed to save persona: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
       setIsSavingPersona(false);
-    }, 600);
+    }
   };
 
   return (
@@ -1480,9 +1511,31 @@ export default function App() {
                               )}
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 184, 148, 0.08)', color: '#00b894', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>
-                              <CheckCircle2 size={14} />
-                              <span>Successfully saved voice to library database!</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--accent-light)', border: '1px solid var(--border-color)', color: 'var(--accent-dark)', padding: '12px 16px', borderRadius: '12px', fontSize: '13px', fontWeight: 600, width: '100%', boxSizing: 'border-box', boxShadow: '0 2px 8px rgba(18, 60, 52, 0.02)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <CheckCircle2 size={16} style={{ color: 'var(--accent-dark)' }} />
+                                <span style={{ fontFamily: 'var(--font-title)', fontWeight: 600 }}>Successfully saved voice to library database!</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('saved-voices')}
+                                style={{
+                                  background: 'transparent',
+                                  color: 'var(--accent-dark)',
+                                  border: 'none',
+                                  padding: '4px 8px',
+                                  fontSize: '12.5px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  textDecoration: 'underline',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                View in Manage Personas →
+                              </button>
                             </div>
                           )}
                         </div>
@@ -1495,120 +1548,109 @@ export default function App() {
               </div>
 
               {/* Navigation Actions Footer */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (currentStep === 4) {
-                      setGenerationResult(null);
-                      setCurrentStep(3);
-                    } else {
-                      setCurrentStep(prev => prev - 1);
-                    }
-                  }}
-                  disabled={currentStep === 1 || isGenerating}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '10px 16px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'transparent',
-                    color: 'var(--text-dark)',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    opacity: currentStep === 1 || isGenerating ? 0.3 : 1,
-                    transition: 'var(--transition-smooth)'
-                  }}
-                >
-                  <ChevronLeft size={16} /> Back
-                </button>
+              {!isGenerating && (
+                <div style={{ display: 'flex', justifyContent: currentStep === 4 ? 'flex-end' : 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '16px' }}>
+                  {currentStep !== 4 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentStep(prev => prev - 1);
+                      }}
+                      disabled={currentStep === 1}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        background: 'transparent',
+                        color: 'var(--text-dark)',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        opacity: currentStep === 1 ? 0.3 : 1,
+                        transition: 'var(--transition-smooth)'
+                      }}
+                    >
+                      <ChevronLeft size={16} /> Back
+                    </button>
+                  )}
 
-                {currentStep < 3 ? (
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(prev => prev + 1)}
-                    disabled={currentStep === 1 && !voiceFile}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '10px 18px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'var(--accent-dark)',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      opacity: currentStep === 1 && !voiceFile ? 0.4 : 1,
-                      transition: 'var(--transition-smooth)'
-                    }}
-                  >
-                    Next <ChevronRight size={16} />
-                  </button>
-                ) : currentStep === 3 ? (
-                  <button
-                    type="button"
-                    onClick={handleCloneAndSpeak}
-                    disabled={isGenerating || (!customText.trim() && selectedPresetIndex === null)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '10px 18px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'var(--accent-dark)',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: isGenerating ? 'not-allowed' : 'pointer',
-                      opacity: isGenerating || (!customText.trim() && selectedPresetIndex === null) ? 0.6 : 1,
-                      transition: 'var(--transition-smooth)'
-                    }}
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" /> Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={16} /> Clone & Speak!
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGenerationResult(null);
-                      setSaveSuccess(false);
-                      setCurrentStep(1);
-                    }}
-                    disabled={isGenerating}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '10px 18px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'var(--accent-dark)',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      opacity: isGenerating ? 0.4 : 1,
-                      transition: 'var(--transition-smooth)'
-                    }}
-                  >
-                    <RotateCcw size={16} /> Clone Another Voice
-                  </button>
-                )}
-              </div>
+                  {currentStep < 3 ? (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(prev => prev + 1)}
+                      disabled={currentStep === 1 && !voiceFile}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '10px 18px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'var(--accent-dark)',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        opacity: currentStep === 1 && !voiceFile ? 0.4 : 1,
+                        transition: 'var(--transition-smooth)'
+                      }}
+                    >
+                      Next <ChevronRight size={16} />
+                    </button>
+                  ) : currentStep === 3 ? (
+                    <button
+                      type="button"
+                      onClick={handleCloneAndSpeak}
+                      disabled={(!customText.trim() && selectedPresetIndex === null)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '10px 18px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'var(--accent-dark)',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        opacity: (!customText.trim() && selectedPresetIndex === null) ? 0.6 : 1,
+                        transition: 'var(--transition-smooth)'
+                      }}
+                    >
+                      <Sparkles size={16} /> Clone & Speak!
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGenerationResult(null);
+                        setSaveSuccess(false);
+                        setCurrentStep(1);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '10px 18px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'var(--accent-dark)',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                    >
+                      <RotateCcw size={16} /> Clone Another Voice
+                    </button>
+                  )}
+                </div>
+              )}
 
             </div>
           </div>

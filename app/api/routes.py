@@ -36,7 +36,8 @@ def get_personas():
 async def create_persona(
     name: str = Form(...),
     voice_clip: Optional[UploadFile] = File(None),
-    face_clip: Optional[UploadFile] = File(None)
+    face_clip: Optional[UploadFile] = File(None),
+    preview_clip: Optional[UploadFile] = File(None)
 ):
     import os
     from app.config.settings import settings
@@ -45,18 +46,27 @@ async def create_persona(
     
     voice_clip_name = None
     if voice_clip and voice_clip.filename:
-        voice_clip_name = voice_clip.filename
-        upload_path = os.path.join(settings.UPLOAD_DIR, voice_clip.filename)
+        # Give it a unique prefix or keep name
+        voice_clip_name = f"voice_{persona_id}_{voice_clip.filename}"
+        upload_path = os.path.join(settings.UPLOAD_DIR, voice_clip_name)
         with open(upload_path, "wb") as f:
             content = await voice_clip.read()
             f.write(content)
             
     face_clip_name = None
     if face_clip and face_clip.filename:
-        face_clip_name = face_clip.filename
-        upload_path = os.path.join(settings.UPLOAD_DIR, face_clip.filename)
+        face_clip_name = f"face_{persona_id}_{face_clip.filename}"
+        upload_path = os.path.join(settings.UPLOAD_DIR, face_clip_name)
         with open(upload_path, "wb") as f:
             content = await face_clip.read()
+            f.write(content)
+
+    preview_clip_name = None
+    if preview_clip and preview_clip.filename:
+        preview_clip_name = f"preview_{persona_id}_{preview_clip.filename}"
+        upload_path = os.path.join(settings.UPLOAD_DIR, preview_clip_name)
+        with open(upload_path, "wb") as f:
+            content = await preview_clip.read()
             f.write(content)
     
     new_persona = Persona(
@@ -64,7 +74,8 @@ async def create_persona(
         name=name,
         avatarUrl=None,
         voiceClipName=voice_clip_name,
-        faceClipName=face_clip_name
+        faceClipName=face_clip_name,
+        previewClipName=preview_clip_name
     )
     mock_db.add_persona(new_persona)
     return new_persona
@@ -115,7 +126,7 @@ async def synthesize_voice(
     try:
         import modal
         clone_voice = modal.Function.from_name("naqalchi-omnivoice", "clone_voice")
-        out_bytes = clone_voice.remote(text=text, ref_audio_bytes=ref_bytes)
+        out_bytes = await clone_voice.remote.aio(text=text, ref_audio_bytes=ref_bytes)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Voice synthesis via Modal GPU failed: {str(e)}")
         
