@@ -132,6 +132,11 @@ export default function App() {
   const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
+  const [personaSpeed, setPersonaSpeed] = useState<number>(1.0);
+  const [personaPitch, setPersonaPitch] = useState<number>(1.0);
+  const [personaModel, setPersonaModel] = useState<string>('CosyVoice-300M');
+
   useEffect(() => {
     if (previewAudioUrl) {
       const audio = new Audio(previewAudioUrl);
@@ -1856,11 +1861,10 @@ export default function App() {
                             <button 
                               className="btn-studio-icon"
                               onClick={() => {
-                                setActivePersonaId(persona.id);
-                                setVoiceFileName(persona.voiceClipName || '');
-                                setVoiceFile(new Blob());
-                                setActiveTab('voice-studio');
-                                setCurrentStep(3);
+                                setEditingPersona(persona);
+                                setPersonaSpeed(persona.speed || 1.0);
+                                setPersonaPitch(persona.pitch || 1.0);
+                                setPersonaModel(persona.voiceModel || 'CosyVoice-300M');
                               }}
                               title="Configure Settings"
                             >
@@ -2017,6 +2021,181 @@ export default function App() {
                     }}
                   >
                     Use This Voice
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Premium Persona Settings Modal Overlay */}
+            {editingPersona && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(6, 12, 11, 0.4)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999
+              }}>
+                <div style={{
+                  background: 'white',
+                  width: '100%',
+                  maxWidth: '460px',
+                  borderRadius: '24px',
+                  padding: '28px',
+                  boxShadow: '0 20px 40px rgba(18, 60, 52, 0.12)',
+                  border: '1px solid var(--border-color)',
+                  position: 'relative'
+                }}>
+                  {/* Close button */}
+                  <button 
+                    onClick={() => setEditingPersona(null)}
+                    style={{
+                      position: 'absolute',
+                      top: '20px',
+                      right: '20px',
+                      background: 'rgba(15,28,26,0.04)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--text-dark)',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ✕
+                  </button>
+
+                  <h3 style={{
+                    fontFamily: 'var(--font-title)',
+                    fontSize: '18px',
+                    fontWeight: 800,
+                    color: 'var(--text-dark)',
+                    marginBottom: '6px',
+                    textAlign: 'center'
+                  }}>
+                    Voice Settings: {editingPersona.name}
+                  </h3>
+                  <p style={{
+                    fontSize: '11.5px',
+                    color: 'var(--text-muted)',
+                    textAlign: 'center',
+                    marginBottom: '24px'
+                  }}>
+                    Customize backend model behavior and override voice parameters.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '28px' }}>
+                    {/* Model override */}
+                    <div>
+                      <label style={{ display: 'block', fontFamily: 'var(--font-title)', fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>
+                        AI Cloning Model
+                      </label>
+                      <select
+                        value={personaModel}
+                        onChange={(e) => setPersonaModel(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          borderRadius: '10px',
+                          border: '1px solid var(--border-color)',
+                          background: 'white',
+                          color: 'var(--text-dark)',
+                          fontFamily: 'inherit',
+                          fontSize: '13px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="CosyVoice-300M">🎙️ CosyVoice 300M (Zero-shot / High-Fidelity)</option>
+                        <option value="CosyVoice-2">✨ CosyVoice v2 (Enhanced Expressiveness)</option>
+                        <option value="GPT-SoVITS">💎 GPT-SoVITS (Precise Pitch Matching)</option>
+                      </select>
+                    </div>
+
+                    {/* Speed Slider */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontFamily: 'var(--font-title)', fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)' }}>Speaking Speed</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-dark)' }}>{personaSpeed}x</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.1"
+                        value={personaSpeed}
+                        onChange={(e) => setPersonaSpeed(parseFloat(e.target.value))}
+                        style={{
+                          width: '100%',
+                          accentColor: 'var(--accent-dark)',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+
+                    {/* Pitch Slider */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontFamily: 'var(--font-title)', fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)' }}>Pitch Adjust</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-dark)' }}>{personaPitch > 1 ? `+${(personaPitch - 1).toFixed(1)}` : (personaPitch - 1).toFixed(1)}</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.1"
+                        value={personaPitch}
+                        onChange={(e) => setPersonaPitch(parseFloat(e.target.value))}
+                        style={{
+                          width: '100%',
+                          accentColor: 'var(--accent-dark)',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save changes action */}
+                  <button
+                    onClick={() => {
+                      // Update persona attributes in our state
+                      setPersonas(prev => prev.map(p => {
+                        if (p.id === editingPersona.id) {
+                          return {
+                            ...p,
+                            voiceModel: personaModel,
+                            speed: personaSpeed,
+                            pitch: personaPitch
+                          };
+                        }
+                        return p;
+                      }));
+                      setEditingPersona(null);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      background: 'var(--accent-dark)',
+                      color: 'white',
+                      border: 'none',
+                      fontFamily: 'var(--font-title)',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(18,60,52,0.15)',
+                    }}
+                  >
+                    Save Voice Parameters
                   </button>
                 </div>
               </div>

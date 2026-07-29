@@ -10,6 +10,9 @@ class Persona(BaseModel):
     voiceClipName: Optional[str] = None
     faceClipName: Optional[str] = None
     previewClipName: Optional[str] = None
+    voiceModel: Optional[str] = None
+    speed: Optional[float] = None
+    pitch: Optional[float] = None
 
 class Job(BaseModel):
     id: str
