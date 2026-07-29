@@ -27,11 +27,38 @@ class Job(BaseModel):
 CUSTOM_PERSONAS: List[Persona] = []
 JOBS_DB: Dict[str, Job] = {}
 
+import os
+import json
+
+DB_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "uploads", "custom_personas.json")
+
+def load_from_disk():
+    global CUSTOM_PERSONAS
+    try:
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                CUSTOM_PERSONAS = [Persona(**p) for p in data]
+    except Exception as e:
+        print(f"Error loading custom_personas.json: {e}")
+
+def save_to_disk():
+    try:
+        os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump([p.dict() for p in CUSTOM_PERSONAS], f, indent=2)
+    except Exception as e:
+        print(f"Error saving custom_personas.json: {e}")
+
+# Initial load
+load_from_disk()
+
 def get_personas() -> List[Persona]:
     return CUSTOM_PERSONAS
 
 def add_persona(persona: Persona) -> Persona:
     CUSTOM_PERSONAS.append(persona)
+    save_to_disk()
     return persona
 
 def get_job(job_id: str) -> Optional[Job]:

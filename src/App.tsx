@@ -127,6 +127,36 @@ export default function App() {
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [activePersonaId, setActivePersonaId] = useState<string>('');
 
+  const [previewingPersona, setPreviewingPersona] = useState<Persona | null>(null);
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string>('');
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (previewAudioUrl) {
+      const audio = new Audio(previewAudioUrl);
+      previewAudioRef.current = audio;
+      audio.onended = () => setIsPreviewPlaying(false);
+      return () => {
+        audio.pause();
+        previewAudioRef.current = null;
+        setIsPreviewPlaying(false);
+      };
+    }
+  }, [previewAudioUrl]);
+
+  const togglePreviewPlayback = () => {
+    if (previewAudioRef.current) {
+      if (isPreviewPlaying) {
+        previewAudioRef.current.pause();
+        setIsPreviewPlaying(false);
+      } else {
+        previewAudioRef.current.play().catch(err => console.warn("Failed to play preview", err));
+        setIsPreviewPlaying(true);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!activePersonaId && personas.length > 0) {
       const prince = personas.find(p => p.name.toLowerCase() === 'prince');
@@ -570,7 +600,26 @@ export default function App() {
   };
 
   const handleCloneAndSpeak = async () => {
-    if (!voiceFile) return;
+    let activeVoiceFile = voiceFile;
+    let activeVoiceFileName = voiceFileName;
+
+    if (activePersonaId && !voiceFile) {
+      try {
+        const res = await fetch(`http://localhost:8000/api/personas/${activePersonaId}/preview`);
+        if (res.ok) {
+          const blob = await res.blob();
+          activeVoiceFile = blob;
+          activeVoiceFileName = "reference.wav";
+        }
+      } catch (e) {
+        console.error("Failed to fetch reference audio from server", e);
+      }
+    }
+
+    if (!activeVoiceFile) {
+      alert("Please upload or record a reference voice first.");
+      return;
+    }
     
     setIsGenerating(true);
     setGenerationProgress(0);
@@ -584,10 +633,10 @@ export default function App() {
 
     try {
       const formData = new FormData();
-      if (voiceFile instanceof File) {
-        formData.append("reference_audio", voiceFile);
+      if (activeVoiceFile instanceof File) {
+        formData.append("reference_audio", activeVoiceFile);
       } else {
-        const recordedFile = new File([voiceFile], voiceFileName || "recorded_vocal.wav", { type: "audio/wav" });
+        const recordedFile = new File([activeVoiceFile], activeVoiceFileName || "recorded_vocal.wav", { type: "audio/wav" });
         formData.append("reference_audio", recordedFile);
       }
       formData.append("text", activeScript);
@@ -1338,6 +1387,27 @@ export default function App() {
                 {currentStep === 3 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                      {activePersonaId && (
+                        <div style={{
+                          background: 'var(--accent-light)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          width: 'fit-content',
+                          margin: '0 auto 12px auto',
+                          fontSize: '12px',
+                          color: 'var(--text-dark)',
+                          fontWeight: 600,
+                          animation: 'fadeIn 0.2s ease'
+                        }}>
+                          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#00b894' }}></span>
+                          Cloning voice: <strong style={{ color: 'var(--accent-dark)' }}>{personas.find(p => p.id === activePersonaId)?.name || 'Custom Persona'}</strong>
+                        </div>
+                      )}
                       <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: 700, color: 'var(--text-dark)' }}>What should your cloned voice say?</h3>
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>Pick one of our curated sentences or write your own custom script below.</p>
                     </div>
@@ -1776,11 +1846,8 @@ export default function App() {
                           <button 
                             className={`btn-studio-toggle ${isActive ? 'active' : ''}`}
                             onClick={() => {
-                              setActivePersonaId(persona.id);
-                              setVoiceFileName(persona.voiceClipName || '');
-                              setVoiceFile(new Blob());
-                              setActiveTab('voice-studio');
-                              setCurrentStep(3); // Start right at script select with loaded voice
+                              setPreviewingPersona(persona);
+                              setPreviewAudioUrl(`http://localhost:8000/api/personas/${persona.id}/preview`);
                             }}
                           >
                             {isActive ? 'Selected' : 'Use in Studio'}
@@ -1817,6 +1884,141 @@ export default function App() {
                     );
                   });
                 })()}
+              </div>
+            )}
+
+            {/* Premium Preview Card Overlay Modal */}
+            {previewingPersona && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(6, 12, 11, 0.4)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999
+              }}>
+                <div style={{
+                  background: 'white',
+                  width: '100%',
+                  maxWidth: '440px',
+                  borderRadius: '24px',
+                  padding: '28px',
+                  boxShadow: '0 20px 40px rgba(18, 60, 52, 0.12)',
+                  border: '1px solid var(--border-color)',
+                  position: 'relative'
+                }}>
+                  {/* Close button */}
+                  <button 
+                    onClick={() => {
+                      setPreviewingPersona(null);
+                      setPreviewAudioUrl('');
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: '20px',
+                      right: '20px',
+                      background: 'rgba(15,28,26,0.04)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--text-dark)',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ✕
+                  </button>
+
+                  <h3 style={{
+                    fontFamily: 'var(--font-title)',
+                    fontSize: '18px',
+                    fontWeight: 800,
+                    color: 'var(--text-dark)',
+                    marginBottom: '16px',
+                    textAlign: 'center'
+                  }}>
+                    Voice Preview: {previewingPersona.name}
+                  </h3>
+
+                  {/* Audio player card */}
+                  <div style={{
+                    background: 'var(--accent-light)',
+                    borderRadius: '16px',
+                    padding: '16px 20px',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    marginBottom: '24px'
+                  }}>
+                    <button
+                      onClick={togglePreviewPlayback}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: 'var(--accent-dark)',
+                        color: 'white',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      {isPreviewPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '2px' }} />}
+                    </button>
+                    <div>
+                      <span style={{ fontFamily: 'var(--font-title)', fontSize: '14px', fontWeight: 700, color: 'var(--text-dark)', display: 'block' }}>
+                        Reference Audio Sample
+                      </span>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        Play to hear the original vocal recording
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Use This Voice Confirm Button */}
+                  <button
+                    onClick={() => {
+                      if (previewingPersona) {
+                        setActivePersonaId(previewingPersona.id);
+                        setVoiceFile(null);
+                        setVoiceFileName('');
+                        setPreviewingPersona(null);
+                        setPreviewAudioUrl('');
+                        setActiveTab('voice-studio');
+                        setCurrentStep(3);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      background: 'var(--accent-dark)',
+                      color: 'white',
+                      border: 'none',
+                      fontFamily: 'var(--font-title)',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(18,60,52,0.15)',
+                    }}
+                  >
+                    Use This Voice
+                  </button>
+                </div>
               </div>
             )}
           </div>

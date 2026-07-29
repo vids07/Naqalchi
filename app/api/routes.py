@@ -80,6 +80,31 @@ async def create_persona(
     mock_db.add_persona(new_persona)
     return new_persona
 
+@router.get("/personas/{persona_id}/preview")
+async def get_persona_preview(persona_id: str):
+    import os
+    from fastapi.responses import FileResponse
+    from app.config.settings import settings
+
+    # Find persona
+    persona = None
+    for p in mock_db.get_personas():
+        if p.id == persona_id:
+            persona = p
+            break
+
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found")
+
+    if not persona.voiceClipName:
+        raise HTTPException(status_code=404, detail="No reference voice clip saved for this persona")
+
+    preview_path = os.path.join(settings.UPLOAD_DIR, persona.voiceClipName)
+    if not os.path.exists(preview_path):
+        raise HTTPException(status_code=404, detail="Reference audio file not found on disk")
+
+    return FileResponse(preview_path, media_type="audio/wav")
+
 @router.post("/generate", response_model=GenerationResult)
 async def generate_content(request: GenerationRequest):
     if not request.script.strip():
