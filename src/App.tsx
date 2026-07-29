@@ -74,7 +74,7 @@ export default function App() {
   const [consentDuration, setConsentDuration] = useState<number>(0);
 
   // Step 2 State: Voice Model selection
-  const [voiceModel, setVoiceModel] = useState<string>('CosyVoice');
+  const [voiceModel, setVoiceModel] = useState<string>('OmniVoice');
   const [modelSearch, setModelSearch] = useState<string>('');
 
   // Step 3 State: Sentences / Input
@@ -88,6 +88,17 @@ export default function App() {
 
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | null>(0);
   const [customText, setCustomText] = useState<string>('');
+
+  const [loadingPhraseIndex, setLoadingPhraseIndex] = useState<number>(0);
+  const loadingPhrases = [
+    "Spinning up your remote high-fidelity A10G GPU worker on Modal...",
+    "Retrieving pristine 48kHz audio tensors for analysis...",
+    "Whisper is transcribing your vocal pacing, breathing, and prosody...",
+    "Constructing zero-shot speaker embeddings for cloning...",
+    "Aligning pitch contours and phonetic characteristics...",
+    "Synthesizing your custom script with your cloned voice...",
+    "Mastering final acoustic rendering and streaming audio bytes back..."
+  ];
 
   // Step 4 State: Loading / Result
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -148,6 +159,33 @@ export default function App() {
 
   // Audio Playback
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const resultAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (generationResult && generationResult.audioUrl) {
+      const audio = new Audio(generationResult.audioUrl);
+      resultAudioRef.current = audio;
+      audio.onended = () => setIsPlaying(false);
+      return () => {
+        audio.pause();
+        resultAudioRef.current = null;
+        setIsPlaying(false);
+      };
+    }
+  }, [generationResult]);
+
+  useEffect(() => {
+    if (resultAudioRef.current) {
+      if (isPlaying) {
+        resultAudioRef.current.play().catch(err => {
+          console.warn("Audio playback failed", err);
+          setIsPlaying(false);
+        });
+      } else {
+        resultAudioRef.current.pause();
+      }
+    }
+  }, [isPlaying]);
 
   // Recording timer tracker
   useEffect(() => {
@@ -171,10 +209,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [isRecordingConsent]);
 
-  // Handle generation ticks
+  // Handle generation ticks & phrase rotation
   useEffect(() => {
     let interval: any;
+    let phraseTimer: any;
     if (isGenerating) {
+      setLoadingPhraseIndex(0);
+      phraseTimer = setInterval(() => {
+        setLoadingPhraseIndex(prev => (prev + 1) % loadingPhrases.length);
+      }, 2500);
+
       interval = setInterval(() => {
         setElapsedTime(prev => prev + 1);
         setGenerationProgress(prev => {
@@ -182,7 +226,7 @@ export default function App() {
             clearInterval(interval);
             return 100;
           }
-          const next = prev + (100 / 10); // Smooth 10 second synthesis
+          const next = prev + (100 / 15); // Smooth simulated progress bar
           if (next < 33) setGenerationStage(0);
           else if (next < 75) setGenerationStage(1);
           else setGenerationStage(2);
@@ -194,7 +238,10 @@ export default function App() {
       setGenerationProgress(0);
       setGenerationStage(0);
     }
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearInterval(phraseTimer);
+    };
   }, [isGenerating]);
 
   const stopPlayback = () => {
@@ -537,77 +584,47 @@ export default function App() {
 
     try {
       const formData = new FormData();
-      formData.append("name", `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
-      
       if (voiceFile instanceof File) {
-        formData.append("voice_clip", voiceFile);
+        formData.append("reference_audio", voiceFile);
       } else {
-        const recordedFile = new File([voiceFile], voiceFileName, { type: "audio/wav" });
-        formData.append("voice_clip", recordedFile);
+        const recordedFile = new File([voiceFile], voiceFileName || "recorded_vocal.wav", { type: "audio/wav" });
+        formData.append("reference_audio", recordedFile);
       }
+      formData.append("text", activeScript);
 
-      const pResponse = await fetch("http://localhost:8000/api/personas", {
+      const response = await fetch("http://localhost:8000/api/voice/synthesize", {
         method: "POST",
         body: formData
       });
 
-      const activePersona: Persona = pResponse.ok ? await pResponse.json() : SYSTEM_STANDARD_PERSONA;
+      if (!response.ok) {
+        throw new Error(`Synthesis backend returned status ${response.status}`);
+      }
 
-      const gResponse = await fetch("http://localhost:8000/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          script: activeScript,
-          personaId: activePersona.id,
-          voiceModel: voiceModel,
-          faceModel: "Duix-Avatar"
-        })
-      });
-
-      if (!gResponse.ok) throw new Error("Synthesis failed");
-
-      const gData = await gResponse.json();
+      const blob = await response.blob();
+      const audioUrl = URL.createObjectURL(blob);
       
-      setGenerationProgress(100);
-      setIsGenerating(false);
-
       setGenerationResult({
-        id: gData.id,
+        id: Math.random().toString(36).substring(2, 9),
         script: activeScript,
-        persona: activePersona,
+        audioUrl: audioUrl,
+        persona: {
+          id: 'temp-' + Math.random().toString(36).substring(2, 9),
+          name: `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`,
+          avatarUrl: null,
+          voiceClipName: voiceFileName || "recorded_vocal.wav",
+          faceClipName: null
+        },
         voiceModel: voiceModel,
-        videoUrl: `http://localhost:8000${gData.videoUrl}`
+        videoUrl: '#'
       });
 
+      setCurrentStep(4);
     } catch (err) {
-      console.warn("Backend unavailable. Simulating generation execution...", err);
-      
-      // Complete simulated progress
-      let simProgress = 0;
-      const interval = setInterval(() => {
-        simProgress += 10;
-        setGenerationProgress(simProgress);
-        if (simProgress >= 100) {
-          clearInterval(interval);
-          setIsGenerating(false);
-          
-          const fallbackPersona: Persona = {
-            id: 'temp-' + Math.random().toString(36).substring(2, 9),
-            name: `Voice Clone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`,
-            avatarUrl: null,
-            voiceClipName: voiceFileName,
-            faceClipName: null
-          };
-
-          setGenerationResult({
-            id: Math.random().toString(36).substring(2, 9),
-            script: activeScript,
-            persona: fallbackPersona,
-            voiceModel: voiceModel,
-            videoUrl: '#'
-          });
-        }
-      }, 500);
+      console.error("Voice synthesis failed:", err);
+      alert(`Synthesis failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -790,7 +807,89 @@ export default function App() {
               </div>
 
               {/* Step Content Panels */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative' }}>
+                
+                {/* FUN INTERACTIVE OVERLAY LOADER */}
+                {isGenerating && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(255, 255, 255, 0.98)',
+                    zIndex: 50,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                    borderRadius: '12px',
+                    backdropFilter: 'blur(8px)',
+                    transition: 'var(--transition-smooth)'
+                  }}>
+                    {/* Glowing Audio wave animation */}
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center', height: '60px', marginBottom: '24px' }}>
+                      {[0.6, 1.2, 0.4, 1.5, 0.8, 1.3, 0.5, 1.1, 0.7, 1.4].map((delay, index) => (
+                        <div 
+                          key={index}
+                          style={{
+                            width: '4px',
+                            height: '100%',
+                            background: 'var(--accent-dark)',
+                            borderRadius: '2px',
+                            animation: `soundWave 1.2s ease-in-out infinite alternate`,
+                            animationDelay: `${delay}s`,
+                            transformOrigin: 'bottom'
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    <style>{`
+                      @keyframes soundWave {
+                        0% { transform: scaleY(0.15); }
+                        100% { transform: scaleY(1.0); }
+                      }
+                      @keyframes subtleSpin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                      }
+                    `}</style>
+
+                    <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '18px', fontWeight: 800, color: 'var(--text-dark)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Loader2 size={20} style={{ animation: 'subtleSpin 1.8s linear infinite', color: 'var(--accent-dark)' }} />
+                      Synthesizing Vocal Magic...
+                    </h3>
+
+                    {/* Progress Bar Container */}
+                    <div style={{ width: '80%', maxWidth: '320px', background: 'rgba(60, 92, 86, 0.1)', height: '6px', borderRadius: '10px', overflow: 'hidden', marginBottom: '16px' }}>
+                      <div style={{ width: `${generationProgress}%`, height: '100%', background: 'var(--accent-dark)', transition: 'width 0.3s ease-out', borderRadius: '10px' }} />
+                    </div>
+
+                    {/* Dynamic Rotating Fun Phrase */}
+                    <p style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: 'var(--accent-dark)',
+                      textAlign: 'center',
+                      maxWidth: '420px',
+                      minHeight: '36px',
+                      lineHeight: '1.4',
+                      padding: '8px 16px',
+                      background: 'var(--accent-light)',
+                      border: '1.5px solid var(--border-color)',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px rgba(60, 92, 86, 0.04)'
+                    }}>
+                      💡 {loadingPhrases[loadingPhraseIndex]}
+                    </p>
+
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                      Elapsed: {elapsedTime}s
+                    </span>
+                  </div>
+                )}
                 
                 {/* STEP 1: Voice Sample Intake */}
                 {currentStep === 1 && (
@@ -1068,178 +1167,7 @@ export default function App() {
                         </div>
                       )}
 
-                    {voiceFile && (
-                      <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-                          <h4 style={{ fontFamily: 'var(--font-title)', fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                            <ShieldCheck size={16} style={{ color: 'var(--accent-dark)' }} /> Legal Consent Verification
-                          </h4>
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', maxWidth: '440px', margin: '2px auto 0' }}>
-                            Google TTS/Safety Verification requires the speaker to read the following statement aloud to verify consent.
-                          </p>
-                        </div>
 
-                        {/* Specific Consent Text Displayed with high emphasis */}
-                        <div style={{
-                          background: 'rgba(60, 92, 86, 0.04)',
-                          border: '1px dashed var(--border-color)',
-                          borderRadius: '10px',
-                          padding: '12px 16px',
-                          textAlign: 'center'
-                        }}>
-                          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 600 }}>Please read the sentence below:</span>
-                          <p style={{ fontFamily: 'var(--font-title)', fontSize: '14px', fontWeight: 600, color: 'var(--text-dark)', marginTop: '6px', fontStyle: 'italic', lineHeight: '1.4' }}>
-                            "I am the owner of this voice and I consent to Google using this voice to create a synthetic voice model."
-                          </p>
-                        </div>
-
-                        {/* Consent Recording 3-Stage Component */}
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          {isRecordingConsent ? (
-                            /* Stage 1: Active Consent Recording */
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#fcfdfd', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                                <button 
-                                  type="button"
-                                  onClick={stopConsentRecording}
-                                  style={{
-                                    width: '40px',
-                                    height: '40px',
-                                    borderRadius: '50%',
-                                    background: '#e84118',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'var(--transition-smooth)'
-                                  }}
-                                  title="Stop Consent Recording"
-                                >
-                                  <div style={{ width: '12px', height: '12px', background: '#ffffff', borderRadius: '2px' }} />
-                                </button>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#e84118' }}>
-                                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e84118' }} />
-                                  Recording Consent: {consentDuration}s
-                                </div>
-                              </div>
-                            </div>
-                          ) : consentFileName ? (
-                            /* Stage 2: Captured Consent Preview */
-                            <div 
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '14px',
-                                padding: '12px 18px',
-                                background: 'var(--accent-light)',
-                                boxShadow: '0 2px 8px rgba(15, 28, 26, 0.02)',
-                                transition: 'var(--transition-smooth)'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <button
-                                  type="button"
-                                  onClick={toggleConsentPlayback}
-                                  style={{
-                                    width: '32px',
-                                    height: '32px',
-                                    borderRadius: '50%',
-                                    background: 'var(--bg-pill-active)',
-                                    border: 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'var(--accent-dark)',
-                                    cursor: 'pointer',
-                                    paddingLeft: isConsentPlaybackPlaying ? '0px' : '2px',
-                                    transition: 'var(--transition-smooth)'
-                                  }}
-                                  title={isConsentPlaybackPlaying ? "Pause Consent Playback" : "Play Consent Recording"}
-                                >
-                                  {isConsentPlaybackPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-                                </button>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                  <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '12px', color: 'var(--text-dark)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
-                                    Consent Verified ({consentFileName})
-                                  </span>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                    Duration: {consentDuration}s • Ready for Google safety verification
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={discardConsentRecording}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  width: '28px',
-                                  height: '28px',
-                                  borderRadius: '50%',
-                                  border: '1px solid rgba(232, 65, 24, 0.1)',
-                                  background: 'rgba(232, 65, 24, 0.04)',
-                                  color: '#e84118',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s ease'
-                                }}
-                                title="Delete consent recording"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          ) : (
-                            /* Stage 3: Idle */
-                            <div 
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '14px',
-                                padding: '20px',
-                                background: '#fcfdfd',
-                                textAlign: 'center'
-                              }}
-                            >
-                              <button 
-                                type="button"
-                                onClick={startConsentRecording}
-                                style={{
-                                  width: '44px',
-                                  height: '44px',
-                                  borderRadius: '50%',
-                                  background: 'var(--accent-dark)',
-                                  color: '#ffffff',
-                                  border: 'none',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  cursor: 'pointer',
-                                  marginBottom: '8px',
-                                  transition: 'var(--transition-smooth)',
-                                  boxShadow: '0 3px 10px rgba(60, 92, 86, 0.2)'
-                                }}
-                                title="Start Consent Recording"
-                              >
-                                <Mic size={18} />
-                              </button>
-                              <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-dark)' }}>
-                                Click to record your consent
-                              </span>
-                              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                Ensure your recording matches the exact sentence above.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -1278,11 +1206,7 @@ export default function App() {
                         {/* Model Scrollable Rows */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', maxHeight: '210px', paddingRight: '4px' }}>
                           {[
-                            { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges and perfect emotional inflection.', speed: 92, naturalness: 98, latency: 'Low (0.8s)' },
-                            { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing, natural pauses, laughter, and realistic speaking rhythm.', speed: 96, naturalness: 93, latency: 'Ultra-Low (0.4s)' },
-                            { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, background music integration, and highly diverse global accents.', speed: 75, naturalness: 91, latency: 'Medium (1.5s)' },
-                            { name: 'VITS-Naqal', tag: '📈 Classical', desc: 'Stable, lightweight neural architecture optimized for rapid bulk generation and standard corporate narrations.', speed: 98, naturalness: 82, latency: 'Instant (0.2s)' },
-                            { name: 'XTTS-v2', tag: '🌍 Multilingual', desc: 'Enterprise grade translation cloning supporting over 17 international languages with pitch-perfect accent replication.', speed: 84, naturalness: 95, latency: 'Low (0.9s)' }
+                            { name: 'OmniVoice', tag: 'Active', desc: 'Superb high-fidelity zero-shot vocal cloning powered by OmniVoice running on remote cloud GPUs. Delivers pristine vocal similarity and ultra-natural speed, cadence, and tonal preservation.', speed: 95, naturalness: 99, latency: 'Low (0.7s)' }
                           ]
                             .filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase()) || m.tag.toLowerCase().includes(modelSearch.toLowerCase()))
                             .map((model) => (
@@ -1314,7 +1238,7 @@ export default function App() {
                                     {model.name}
                                   </span>
                                 </div>
-                                <span style={{ fontSize: '9px', fontWeight: 700, background: 'rgba(15,28,26,0.06)', color: 'var(--text-dark)', padding: '2px 6px', borderRadius: '20px' }}>
+                                <span style={{ fontSize: '9px', fontWeight: 700, background: 'rgba(60, 92, 86, 0.1)', color: 'var(--accent-dark)', padding: '2px 6px', borderRadius: '20px' }}>
                                   {model.tag}
                                 </span>
                               </div>
@@ -1326,11 +1250,7 @@ export default function App() {
                       <div style={{ flex: '1 1 55%', display: 'flex', flexDirection: 'column', background: 'var(--accent-light)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border-color)' }}>
                         {(() => {
                           const modelsList = [
-                            { name: 'CosyVoice', tag: '🎭 Realism', desc: 'Ultra-realistic zero-shot voice cloning with expressive pitch ranges and perfect emotional inflection.', speed: 92, naturalness: 98, latency: 'Low (0.8s)' },
-                            { name: 'ChatTTS', tag: '🎙️ Conversational', desc: 'Optimized for high-fidelity conversational pacing, natural pauses, laughter, and realistic speaking rhythm.', speed: 96, naturalness: 93, latency: 'Ultra-Low (0.4s)' },
-                            { name: 'Bark', tag: '✨ Creative', desc: 'Great for soundscapes, artistic rendering, background music integration, and highly diverse global accents.', speed: 75, naturalness: 91, latency: 'Medium (1.5s)' },
-                            { name: 'VITS-Naqal', tag: '📈 Classical', desc: 'Stable, lightweight neural architecture optimized for rapid bulk generation and standard corporate narrations.', speed: 98, naturalness: 82, latency: 'Instant (0.2s)' },
-                            { name: 'XTTS-v2', tag: '🌍 Multilingual', desc: 'Enterprise grade translation cloning supporting over 17 international languages with pitch-perfect accent replication.', speed: 84, naturalness: 95, latency: 'Low (0.9s)' }
+                            { name: 'OmniVoice', tag: 'Active', desc: 'Superb high-fidelity zero-shot vocal cloning powered by OmniVoice running on remote cloud GPUs. Delivers pristine vocal similarity and ultra-natural speed, cadence, and tonal preservation.', speed: 95, naturalness: 99, latency: 'Low (0.7s)' }
                           ];
                           const activeModel = modelsList.find(m => m.name === voiceModel) || modelsList[0];
                           return (
@@ -1442,6 +1362,7 @@ export default function App() {
                         📝 Custom Script
                       </button>
                     </div>
+
 
                     {/* Script Editor Canvas */}
                     <div style={{ position: 'relative' }}>
@@ -1609,7 +1530,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCurrentStep(prev => prev + 1)}
-                    disabled={currentStep === 1 && (!voiceFile || !consentFile)}
+                    disabled={currentStep === 1 && !voiceFile}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1622,7 +1543,7 @@ export default function App() {
                       fontWeight: 700,
                       fontSize: '13px',
                       cursor: 'pointer',
-                      opacity: currentStep === 1 && (!voiceFile || !consentFile) ? 0.4 : 1,
+                      opacity: currentStep === 1 && !voiceFile ? 0.4 : 1,
                       transition: 'var(--transition-smooth)'
                     }}
                   >
@@ -1631,10 +1552,8 @@ export default function App() {
                 ) : currentStep === 3 ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      setCurrentStep(4);
-                      handleCloneAndSpeak();
-                    }}
+                    onClick={handleCloneAndSpeak}
+                    disabled={isGenerating || (!customText.trim() && selectedPresetIndex === null)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1646,11 +1565,20 @@ export default function App() {
                       color: '#ffffff',
                       fontWeight: 700,
                       fontSize: '13px',
-                      cursor: 'pointer',
+                      cursor: isGenerating ? 'not-allowed' : 'pointer',
+                      opacity: isGenerating || (!customText.trim() && selectedPresetIndex === null) ? 0.6 : 1,
                       transition: 'var(--transition-smooth)'
                     }}
                   >
-                    <Sparkles size={16} /> Clone & Speak!
+                    {isGenerating ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" /> Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={16} /> Clone & Speak!
+                      </>
+                    )}
                   </button>
                 ) : (
                   <button
