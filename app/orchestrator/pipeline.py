@@ -189,3 +189,72 @@ class GenerationPipeline:
 
 # Global singleton
 pipeline = GenerationPipeline()
+
+
+async def run_face_pipeline(
+    job_id: str,
+    source_image_bytes: bytes,
+    driving_audio_bytes: bytes,
+    pose_weight: float,
+    face_weight: float,
+    lip_weight: float
+) -> None:
+    """
+    Asynchronously runs the face animation pipeline.
+    1. Updates job status to 'processing'
+    2. Calls HalloAdapter.animate()
+    3. Saves returned MP4 bytes to output folder
+    4. Updates job status to 'completed' with output_video_url
+    """
+    from app.adapters.face.hallo_adapter import HalloAdapter
+    
+    start_time = time.time()
+    print(f"[Orchestrator] Starting face pipeline for job: {job_id}")
+    
+    # 1. Update job status to "processing"
+    mock_db.update_job_status(job_id=job_id, status="processing")
+    
+    try:
+        # Note: This only checks credential presence, not worker availability.
+        # Modal will raise at call time if the worker isn't deployed or is unreachable.
+        has_modal = os.getenv("MODAL_TOKEN_ID") is not None or os.getenv("MODAL_TOKEN_SECRET") is not None
+        mode = "modal" if has_modal else "simulation"
+        
+        adapter = HalloAdapter(mode=mode)
+        
+        # 2. Call HalloAdapter.animate()
+        video_bytes = await adapter.animate(
+            source_image_bytes=source_image_bytes,
+            driving_audio_bytes=driving_audio_bytes,
+            pose_weight=pose_weight,
+            face_weight=face_weight,
+            lip_weight=lip_weight
+        )
+        
+        # 3. Save returned MP4 bytes to public outputs/
+        output_filename = f"{job_id}.mp4"
+        output_path = os.path.join(settings.OUTPUT_DIR, output_filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        with open(output_path, "wb") as f:
+            f.write(video_bytes)
+            
+        elapsed_time = int(time.time() - start_time)
+        output_video_url = f"/outputs/{output_filename}"
+
+        # 4. Update job status to "completed" with output_video_url
+        mock_db.update_job_status(
+            job_id=job_id,
+            status="completed",
+            output_video_url=output_video_url,
+            elapsed_time=elapsed_time
+        )
+        print(f"[Orchestrator] Face pipeline completed successfully for job {job_id} in {elapsed_time}s")
+        
+    except Exception as e:
+        print(f"[Orchestrator] Face pipeline failed for job {job_id}: {str(e)}")
+        mock_db.update_job_status(
+            job_id=job_id,
+            status="failed",
+            error_message=str(e)
+        )

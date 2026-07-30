@@ -282,3 +282,123 @@ async def generate_voice_key(
                 except Exception:
                     pass
 
+
+# Face Clone / Animation endpoints (app/api/routes.py)
+from fastapi import BackgroundTasks
+
+@router.post("/v1/face/animate", status_code=202)
+async def face_animate(
+    background_tasks: BackgroundTasks,
+    source_image: UploadFile = File(...),
+    driving_audio: UploadFile = File(...),
+    pose_weight: float = Form(1.0),
+    face_weight: float = Form(1.0),
+    lip_weight: float = Form(1.0)
+):
+    """
+    POST /api/v1/face/animate
+    Accepts multipart form, validates image and audio, creates queued job,
+    and runs face animation in background.
+    """
+    from app.validators import face_validator
+    from app.orchestrator.pipeline import run_face_pipeline
+    import wave
+    import io
+    
+    # 1. Read files into memory
+    try:
+        source_image_bytes = await source_image.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read source image: {str(e)}")
+
+    try:
+        driving_audio_bytes = await driving_audio.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read driving audio: {str(e)}")
+
+    # 2. Run validations synchronously
+    face_validator.validate_image(source_image_bytes)
+    normalized_audio_bytes = face_validator.validate_audio(driving_audio_bytes)
+
+    # Calculate real estimate based on audio duration (5x real-time midpoint estimate)
+    try:
+        with wave.open(io.BytesIO(normalized_audio_bytes)) as wf:
+            audio_duration = wf.getnframes() / wf.getframerate()
+        estimated_time_seconds = round(audio_duration * 5, 1)
+    except Exception:
+        estimated_time_seconds = 30.0
+
+    # 3. Create Job record in mock_db
+    job_id = str(uuid.uuid4())
+    
+    import os
+    from app.config.settings import settings
+    
+    source_image_path = os.path.join(settings.UPLOAD_DIR, f"face_src_{job_id}_{source_image.filename}")
+    driving_audio_path = os.path.join(settings.UPLOAD_DIR, f"face_drv_{job_id}_{driving_audio.filename}")
+    
+    # Create the job record first to prevent orphaned files
+    mock_db.create_face_job(
+        job_id=job_id,
+        source_image_path=source_image_path,
+        driving_audio_path=driving_audio_path,
+        pose_weight=pose_weight,
+        face_weight=face_weight,
+        lip_weight=lip_weight
+    )
+
+    # Now write validated files to disk safely
+    try:
+        with open(source_image_path, "wb") as f:
+            f.write(source_image_bytes)
+        with open(driving_audio_path, "wb") as f:
+            f.write(normalized_audio_bytes)
+    except Exception as e:
+        mock_db.update_job_status(job_id=job_id, status="failed", error_message=f"Disk write failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist files on disk: {str(e)}")
+
+    # 4. Dispatch run_face_pipeline as BackgroundTask
+    background_tasks.add_task(
+        run_face_pipeline,
+        job_id=job_id,
+        source_image_bytes=source_image_bytes,
+        driving_audio_bytes=normalized_audio_bytes,
+        pose_weight=pose_weight,
+        face_weight=face_weight,
+        lip_weight=lip_weight
+    )
+
+    # 5. Return 202
+    return {
+        "job_id": job_id,
+        "estimated_time_seconds": estimated_time_seconds
+    }
+
+@router.get("/v1/face/jobs/{job_id}")
+def get_face_job(job_id: str):
+    """
+    GET /api/v1/face/jobs/{job_id}
+    Returns current job status, progress_percentage, output_url, and error.
+    """
+    job = mock_db.get_job(job_id)
+    if not job or job.job_type != "face":
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    progress_map = {
+        "queued": 0,
+        "validating": 15,
+        "processing": 50,
+        "completed": 100,
+        "failed": 100
+    }
+    progress = progress_map.get(job.status, 0)
+
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "progress_percentage": progress,
+        "output_url": job.output_video_url,
+        "error": job.errorMessage
+    }
+
+

@@ -1,6 +1,6 @@
 # app/db/mock_db.py
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel
 
 class Persona(BaseModel):
@@ -16,15 +16,27 @@ class Persona(BaseModel):
 
 class Job(BaseModel):
     id: str
-    script: str
-    personaId: str
-    voiceModel: str
-    faceModel: str
-    status: str  # "queued", "generating_voice", "generating_avatar", "completed", "failed"
+    script: Optional[str] = None
+    personaId: Optional[str] = None
+    voiceModel: Optional[str] = None
+    faceModel: Optional[str] = None
+    status: Literal[
+        "queued", "validating", "processing", 
+        "completed", "failed", "generating_voice", "generating_avatar"
+    ] = "queued"
     videoUrl: Optional[str] = None
     errorMessage: Optional[str] = None
     elapsedTime: Optional[int] = None
     createdAt: float
+    
+    # Face clone specific fields
+    job_type: Literal["voice", "face", "avatar"] = "avatar"
+    source_image_path: Optional[str] = None
+    driving_audio_path: Optional[str] = None
+    pose_weight: float = 1.0
+    face_weight: float = 1.0
+    lip_weight: float = 1.0
+    output_video_url: Optional[str] = None
 
 # In-memory global databases
 CUSTOM_PERSONAS: List[Persona] = []
@@ -74,17 +86,42 @@ def create_job(job_id: str, script: str, persona_id: str, voice_model: str, face
         personaId=persona_id,
         voiceModel=voice_model,
         faceModel=face_model,
+        job_type="avatar",
         status="queued",
         createdAt=time.time()
     )
     JOBS_DB[job_id] = job
     return job
 
-def update_job_status(job_id: str, status: str, video_url: Optional[str] = None, error_message: Optional[str] = None, elapsed_time: Optional[int] = None) -> Optional[Job]:
+def create_face_job(
+    job_id: str,
+    source_image_path: str,
+    driving_audio_path: str,
+    pose_weight: float = 1.0,
+    face_weight: float = 1.0,
+    lip_weight: float = 1.0
+) -> Job:
+    job = Job(
+        id=job_id,
+        job_type="face",
+        source_image_path=source_image_path,
+        driving_audio_path=driving_audio_path,
+        pose_weight=pose_weight,
+        face_weight=face_weight,
+        lip_weight=lip_weight,
+        status="queued",
+        createdAt=time.time()
+    )
+    JOBS_DB[job_id] = job
+    return job
+
+def update_job_status(job_id: str, status: Literal["queued", "validating", "processing", "completed", "failed", "generating_voice", "generating_avatar"], video_url: Optional[str] = None, output_video_url: Optional[str] = None, error_message: Optional[str] = None, elapsed_time: Optional[int] = None) -> Optional[Job]:
     if job_id in JOBS_DB:
         JOBS_DB[job_id].status = status
         if video_url:
             JOBS_DB[job_id].videoUrl = video_url
+        if output_video_url:
+            JOBS_DB[job_id].output_video_url = output_video_url
         if error_message:
             JOBS_DB[job_id].errorMessage = error_message
         if elapsed_time is not None:
