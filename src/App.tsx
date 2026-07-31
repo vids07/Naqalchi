@@ -15,7 +15,11 @@ import {
   ChevronRight,
   ChevronLeft,
   Search,
-  ShieldCheck
+  ShieldCheck,
+  Video,
+  Image as ImageIcon,
+  Sliders,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Persona {
@@ -24,6 +28,9 @@ interface Persona {
   avatarUrl: string | null;
   voiceClipName: string | null;
   faceClipName: string | null;
+  speed?: number;
+  pitch?: number;
+  voiceModel?: string;
 }
 
 
@@ -37,8 +44,8 @@ const SYSTEM_STANDARD_PERSONA: Persona = {
 };
 
 export default function App() {
-  // Navigation Tabs: 'voice-studio' or 'saved-voices'
-  const [activeTab, setActiveTab] = useState<'voice-studio' | 'saved-voices'>('voice-studio');
+  // Navigation Tabs: 'voice-studio' | 'face-clone' | 'saved-voices'
+  const [activeTab, setActiveTab] = useState<'voice-studio' | 'face-clone' | 'saved-voices'>('voice-studio');
 
   // Sidebar state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -115,6 +122,7 @@ export default function App() {
   const [generationResult, setGenerationResult] = useState<{
     id: string;
     script: string;
+    audioUrl: string;
     persona: Persona;
     voiceModel: string;
     videoUrl: string;
@@ -128,6 +136,112 @@ export default function App() {
   const [activePersonaId, setActivePersonaId] = useState<string>('');
 
   const [previewingPersona, setPreviewingPersona] = useState<Persona | null>(null);
+
+  // --- Face Clone Studio State (Milestone 2/3 Frontend) ---
+  const [faceImageFile, setFaceImageFile] = useState<File | null>(null);
+  const [faceImagePreview, setFaceImagePreview] = useState<string | null>(null);
+  const [faceAudioFile, setFaceAudioFile] = useState<File | null>(null);
+  const [faceAudioPreview, setFaceAudioPreview] = useState<string | null>(null);
+  
+  // Weights configuration
+  const [poseWeight, setPoseWeight] = useState<number>(1.0);
+  const [faceWeight, setFaceWeight] = useState<number>(1.0);
+  const [lipWeight, setLipWeight] = useState<number>(1.0);
+  
+  // Job processing & polling state
+  const [faceJobId, setFaceJobId] = useState<string | null>(null);
+  const [faceJobStatus, setFaceJobStatus] = useState<string>('');
+  const [faceProgress, setFaceProgress] = useState<number>(0);
+  const [faceOutputUrl, setFaceOutputUrl] = useState<string | null>(null);
+  const [faceError, setFaceError] = useState<string | null>(null);
+  const [isAnimatingFace, setIsAnimatingFace] = useState<boolean>(false);
+
+  const startFaceAnimation = async () => {
+    if (!faceImageFile || !faceAudioFile) {
+      alert("Please upload both a reference image and a driving audio file first.");
+      return;
+    }
+    
+    setIsAnimatingFace(true);
+    setFaceError(null);
+    setFaceProgress(0);
+    setFaceOutputUrl(null);
+    setFaceJobStatus('queued');
+    
+    try {
+      const formData = new FormData();
+      formData.append("source_image", faceImageFile);
+      formData.append("driving_audio", faceAudioFile);
+      formData.append("pose_weight", poseWeight.toString());
+      formData.append("face_weight", faceWeight.toString());
+      formData.append("lip_weight", lipWeight.toString());
+      
+      const res = await fetch("http://localhost:8000/api/v1/face/animate", {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `Server returned error status ${res.status}`);
+      }
+      
+      const data = await res.json();
+      setFaceJobId(data.job_id);
+      setFaceJobStatus(data.status);
+      setFaceProgress(data.progress_percentage || 0);
+      
+    } catch (err: any) {
+      console.error("Face animation initiation failed:", err);
+      setFaceError(err.message || String(err));
+      setIsAnimatingFace(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!faceJobId || !isAnimatingFace) return;
+    
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/v1/face/jobs/${faceJobId}`);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch job status: ${res.status}`);
+        }
+        const data = await res.json();
+        
+        if (!isMounted) return;
+        
+        setFaceJobStatus(data.status);
+        setFaceProgress(data.progress_percentage || 0);
+        
+        if (data.status === 'completed') {
+          setFaceOutputUrl(`http://localhost:8000${data.output_url}`);
+          setIsAnimatingFace(false);
+          setFaceJobId(null);
+          clearInterval(interval);
+        } else if (data.status === 'failed') {
+          setFaceError(data.error || "Animation pipeline failed.");
+          setIsAnimatingFace(false);
+          setFaceJobId(null);
+          clearInterval(interval);
+        }
+      } catch (err: any) {
+        console.error("Polling job failed:", err);
+        if (isMounted) {
+          setFaceError(err.message || String(err));
+          setIsAnimatingFace(false);
+          setFaceJobId(null);
+          clearInterval(interval);
+        }
+      }
+    }, 1500);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [faceJobId, isAnimatingFace]);
   const [previewAudioUrl, setPreviewAudioUrl] = useState<string>('');
   const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -771,6 +885,15 @@ export default function App() {
           >
             <Mic size={18} />
             Voice Studio
+          </button>
+          <button 
+            className={`nav-tab ${activeTab === 'face-clone' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('face-clone');
+            }}
+          >
+            <Video size={18} />
+            Face Studio
           </button>
           <button 
             className={`nav-tab ${activeTab === 'saved-voices' ? 'active' : ''}`}
@@ -1729,6 +1852,366 @@ export default function App() {
 
             </div>
           </div>
+          </div>
+        )}
+        {activeTab === 'face-clone' && (
+          <div className="persona-admin-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
+            <div className="persona-admin-header" style={{ marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '24px', fontWeight: '700' }}>Talking Avatar Face Studio</h2>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Synthesize high-fidelity talking portrait videos using zero-shot reference portraits and driving soundtracks.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', flexGrow: 1, paddingBottom: '40px', alignItems: 'start' }}>
+              
+              {/* LEFT COLUMN: UPLOADS & FILE SELECTION */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                {/* PORTRAIT IMAGE FILE BLOCK */}
+                <div className="studio-console-card" style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '24px', boxShadow: 'var(--shadow-premium)' }}>
+                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ImageIcon size={18} style={{ color: 'var(--accent-dark)' }} /> Reference Portrait Image
+                  </h3>
+                  
+                  {!faceImagePreview ? (
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '2px dashed var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '40px 20px',
+                      cursor: 'pointer',
+                      background: 'var(--accent-light)',
+                      transition: 'var(--transition-smooth)',
+                    }}
+                    onDragOver={(e) => { e.preventDefault(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files[0];
+                      if (file && file.type.startsWith('image/')) {
+                        setFaceImageFile(file);
+                        setFaceImagePreview(URL.createObjectURL(file));
+                      }
+                    }}
+                    >
+                      <ImageIcon size={32} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-dark)' }}>Drag & drop portrait image here</span>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Supports PNG, JPG, or JPEG</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setFaceImageFile(file);
+                            setFaceImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                      <img 
+                        src={faceImagePreview} 
+                        alt="Reference Avatar" 
+                        style={{ width: '100%', maxHeight: '280px', objectFit: 'contain', background: '#fafafa', display: 'block' }}
+                      />
+                      <button 
+                        onClick={() => {
+                          setFaceImageFile(null);
+                          setFaceImagePreview(null);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          background: 'rgba(255,255,255,0.9)',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '32px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                          color: '#ff4d4f'
+                        }}
+                        title="Remove reference"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* SOUNDTRACK AUDIO FILE BLOCK */}
+                <div className="studio-console-card" style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '24px', boxShadow: 'var(--shadow-premium)' }}>
+                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileAudio size={18} style={{ color: 'var(--accent-dark)' }} /> Driving Soundtrack Audio
+                  </h3>
+                  
+                  {!faceAudioPreview ? (
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '2px dashed var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '40px 20px',
+                      cursor: 'pointer',
+                      background: 'var(--accent-light)',
+                      transition: 'var(--transition-smooth)',
+                    }}
+                    onDragOver={(e) => { e.preventDefault(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files[0];
+                      if (file && file.type.startsWith('audio/')) {
+                        setFaceAudioFile(file);
+                        setFaceAudioPreview(URL.createObjectURL(file));
+                      }
+                    }}
+                    >
+                      <FileAudio size={32} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-dark)' }}>Drag & drop driving soundtrack here</span>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Supports WAV, MP3, or M4A</span>
+                      <input 
+                        type="file" 
+                        accept="audio/*" 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setFaceAudioFile(file);
+                            setFaceAudioPreview(URL.createObjectURL(file));
+                          }
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', background: 'var(--accent-light)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                          {faceAudioFile?.name || "Driving Audio Clip"}
+                        </span>
+                        <button 
+                          onClick={() => {
+                            setFaceAudioFile(null);
+                            setFaceAudioPreview(null);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: '#ff4d4f',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                      <audio src={faceAudioPreview} controls style={{ width: '100%' }} />
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* RIGHT COLUMN: CONFIG & GENERATION */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                {/* INFERENCE WEIGHT CONFIG BLOCK */}
+                <div className="studio-console-card" style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '24px', boxShadow: 'var(--shadow-premium)' }}>
+                  <h3 style={{ fontFamily: 'var(--font-title)', fontSize: '16px', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sliders size={18} style={{ color: 'var(--accent-dark)' }} /> Expression Weight Tuning
+                  </h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* POSE WEIGHT SLIDER */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>Pose Weight</span>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-dark)' }}>{poseWeight.toFixed(1)}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.0" 
+                        max="2.0" 
+                        step="0.1" 
+                        value={poseWeight}
+                        onChange={(e) => setPoseWeight(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: 'var(--accent-dark)' }}
+                      />
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Controls amplitude of head tilts, nods, and rotational body gestures.</p>
+                    </div>
+
+                    {/* FACE WEIGHT SLIDER */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>Face Weight</span>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-dark)' }}>{faceWeight.toFixed(1)}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.0" 
+                        max="2.0" 
+                        step="0.1" 
+                        value={faceWeight}
+                        onChange={(e) => setFaceWeight(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: 'var(--accent-dark)' }}
+                      />
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Adjusts facial micro-expression intensity (eyebrows, cheeks, blinking).</p>
+                    </div>
+
+                    {/* LIP WEIGHT SLIDER */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>Lip Weight</span>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-dark)' }}>{lipWeight.toFixed(1)}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.0" 
+                        max="2.0" 
+                        step="0.1" 
+                        value={lipWeight}
+                        onChange={(e) => setLipWeight(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: 'var(--accent-dark)' }}
+                      />
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Forces phonetic lip synchronization and mouth alignment contours.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ANIMATE TRIGGERS & STATUS OUTPUT */}
+                <div className="studio-console-card" style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '24px', boxShadow: 'var(--shadow-premium)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {!isAnimatingFace && !faceOutputUrl && (
+                    <button 
+                      onClick={startFaceAnimation}
+                      disabled={!faceImageFile || !faceAudioFile}
+                      style={{
+                        width: '100%',
+                        padding: '14px 20px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: (!faceImageFile || !faceAudioFile) ? 'rgba(15,28,26,0.06)' : 'var(--accent-dark)',
+                        color: (!faceImageFile || !faceAudioFile) ? 'var(--text-muted)' : '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '15px',
+                        cursor: (!faceImageFile || !faceAudioFile) ? 'not-allowed' : 'pointer',
+                        transition: 'var(--transition-smooth)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px'
+                      }}
+                    >
+                      <Sparkles size={18} /> Synthesize Avatar Video
+                    </button>
+                  )}
+
+                  {/* ACTIVE POLLECTION STATE WITH PROGRESS & STAGES */}
+                  {isAnimatingFace && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--accent-light)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Loader2 size={18} className="spin" style={{ color: 'var(--accent-dark)' }} />
+                        <span style={{ fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dark)' }}>
+                          Status: <span style={{ color: 'var(--accent-dark)' }}>{faceJobStatus}</span>
+                        </span>
+                      </div>
+                      
+                      <div style={{ width: '100%', height: '8px', background: 'rgba(15,28,26,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${faceProgress}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-dark) 0%, #bfe5df 100%)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <span>Pipeline execution stage progress</span>
+                        <span>{faceProgress}%</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ERROR REPORT BOX */}
+                  {faceError && (
+                    <div style={{ display: 'flex', alignItems: 'start', gap: '12px', padding: '16px', border: '1px solid rgba(255,77,79,0.2)', borderRadius: '12px', background: 'rgba(255,77,79,0.03)' }}>
+                      <AlertTriangle size={18} style={{ color: '#ff4d4f', flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#ff4d4f' }}>Pipeline Execution Error</h4>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{faceError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HIGH FIDELITY OUTPUT COMPLETED STAGE */}
+                  {faceOutputUrl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-dark)' }}>
+                        <CheckCircle2 size={18} />
+                        <span style={{ fontSize: '14px', fontWeight: 700 }}>Avatar Video Rendered Successfully!</span>
+                      </div>
+                      
+                      <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)', background: '#000000', display: 'flex', justifyContent: 'center' }}>
+                        <video src={faceOutputUrl} controls style={{ width: '100%', maxHeight: '360px' }} />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <a 
+                          href={faceOutputUrl} 
+                          download="naqalchi_avatar_result.mp4"
+                          style={{
+                            flex: 1,
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            background: 'var(--accent-dark)',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            textDecoration: 'none',
+                            textAlign: 'center',
+                            transition: 'var(--transition-smooth)',
+                            boxShadow: 'var(--shadow-premium)'
+                          }}
+                        >
+                          Download MP4 Output
+                        </a>
+                        <button 
+                          onClick={() => {
+                            setFaceOutputUrl(null);
+                            setFaceJobStatus('');
+                            setFaceProgress(0);
+                          }}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            background: '#ffffff',
+                            color: 'var(--text-dark)',
+                            fontWeight: 600,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            transition: 'var(--transition-smooth)'
+                          }}
+                        >
+                          Animate New Portrait
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+            </div>
           </div>
         )}
 
